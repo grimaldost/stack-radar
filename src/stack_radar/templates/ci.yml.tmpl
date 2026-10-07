@@ -1,0 +1,104 @@
+name: ci
+
+# The catalogue's CI, written by `radar init`. Two things it relies on:
+#
+#   * `uv lock --check` needs a committed `uv.lock`. `uv lock` runs before the first
+#     commit, so the lock is in the tree from the start.
+__ENGINE_PIN_NOTE__
+#
+# Two operating systems, for a reason rather than for symmetry: paths, the invariant scan's
+# directory walk and every profile in `environments/` behave differently on the two, and a
+# line-ending class of failure - identical counts, diverging digests - is invisible to a
+# single-platform leg.
+
+# Least privilege: every job checks out the tree and runs local tooling, and nothing here
+# calls a write API.
+permissions:
+  contents: read
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          # The DECLARED FLOOR from `pyproject.toml`, not the newest release: the floor is a
+          # claim and nothing else checks it, so pinning it here exercises both ends of the
+          # supported range instead of assuming one.
+          python-version: '3.11'
+
+      # `uv lock --check` is FIRST, before anything that would rewrite the lock: no test can
+      # guard lock staleness, because `uv run` re-locks before a test could read the file.
+      - run: uv lock --check
+      - run: uv sync
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+
+      # THE SUITE, commented out because a fresh catalogue has none and `pytest` exits 5
+      # when it collects nothing - a red run whose only content is that there was nothing to
+      # run. Arm it on the day you write the first test.
+      # - run: uv run python -m pytest -q
+
+      # The adoption gate. On a runner there is no governed tree checked out and no
+      # machine-local entries, so some of its checks cannot run - it names which, by name,
+      # and everything repo-only (schema, licences, staleness, telemetry keys, pilot-exit
+      # rules, version sites) still runs and can still fail here.
+      - run: uvx --from "__ENGINE_SPEC__" radar gate__ENGINE_COMMENT__
+      - run: uvx --from "__ENGINE_SPEC__" radar check-version-sites__ENGINE_COMMENT__
+
+  # THE CHANGELOG GATE, commented out, and the reason is mechanical rather than a
+  # preference: it compares a branch against the base it will merge into, so it needs a
+  # base ref, the full history, and a workflow run triggered by `pull_request`. The base
+  # ref is handed over through `env` rather than written into the script, so a branch name
+  # is never pasted into shell text. Uncomment the job once the catalogue has code under
+  # `[changelog].prefixes` worth recording.
+  #
+  # changelog-gate:
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+  #     - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+  #       with:
+  #         # uv itself, pinned and bumped by hand like the steps above.
+  #         version: '0.12.19'
+  #     - run: uvx --from "__ENGINE_SPEC__" radar changelog-gate "origin/$BASE_REF"__ENGINE_COMMENT__
+  #       env:
+  #         BASE_REF: ${{ github.base_ref }}
+
+  # The audit is given the repository root rather than .github/workflows, because that is
+  # how zizmor finds dependabot.yml as well: the file that decides how the pins above move
+  # is audited with the workflows that use them.
+  zizmor:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+      - run: uvx zizmor==1.30.0 --min-severity high .
+        env:
+          GH_TOKEN: ${{ github.token }}

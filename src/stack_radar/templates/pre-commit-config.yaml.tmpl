@@ -1,0 +1,75 @@
+# The commit-time lane: the fast half of CI, run before a commit lands instead of after a
+# push, plus the commit-message check CI has no seat for.
+#
+# Install (one-off, per clone):
+#     git config core.hooksPath .githooks
+#
+# That points git at the TRACKED `.githooks/`: its scripts run on every commit, and a hook
+# a checked-out branch adds there runs on the next checkout or commit. So a pull request
+# that changes `.githooks/`, this file, `uv.lock`, `pyproject.toml`, `uv.toml` or
+# `.python-version` changes code that runs on your machine - review it as you would a
+# change to an `[install]` command, before checking the branch out.
+#
+# NOT `pre-commit install`: its hooks call the `pre-commit` console-script shim, and a
+# machine that refuses unsigned executables will not run it, leaving `.git/hooks/`
+# looking armed while nothing runs. The tracked scripts in `.githooks/` call this config
+# through `uv run --frozen python -m pre_commit` instead, which also pins the project's own
+# interpreter. Every `uv run` here is `--frozen`: uv installs what `uv.lock` lists and
+# nothing else, rather than resolving a `pyproject.toml` that `uv.lock` no longer matches
+# and installing the result.
+#
+# Run the lane by hand:
+#     uv run --frozen python -m pre_commit run --all-files
+#
+# WHAT IS DELIBERATELY ABSENT, because an omission and a trade-off look identical from
+# outside: `radar gate`. The gate reads the whole governed tree, which is a per-machine
+# fact a hook cannot assume and a CI runner does not have at all - so it says which of its
+# checks could not run, and it is CI's step rather than a commit's.
+repos:
+  - repo: local
+    hooks:
+      # Local `language: system` hooks so the version is the lock file's rather than a
+      # second pinned copy that drifts from CI's. A catalogue with no Python of its own
+      # stages no Python, and the hooks are skipped; they start biting the day you add a
+      # helper under the prefix `radar.toml [changelog].prefixes` names.
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --frozen ruff check
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: ruff-format-check
+        name: ruff format --check
+        entry: uv run --frozen ruff format --check
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # Commit-message lane (the .githooks/commit-msg wrapper runs it). A conventional subject
+  # is what lets a tool read the history: the changelog gate reads commit messages for its
+  # exemption trailer, and a release reads them to find what moved.
+  #
+  # Pinned to a COMMIT, not a tag: a tag can be moved to other code by anyone with push
+  # rights on that repository, and this hook runs on every commit. The `# frozen:` comment
+  # names the tag the commit was taken from, which is the form
+  # `pre-commit autoupdate --freeze` writes when you move the pin.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: 5f9c312d9978fbcee1da97154ba385834eeda799  # frozen: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - chore
+          - build
+          - ci
+          - release

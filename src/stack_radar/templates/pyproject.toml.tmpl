@@ -1,0 +1,46 @@
+# A data root's `pyproject.toml`, minimal on purpose.
+#
+# WHY A CATALOGUE HAS ONE AT ALL, since it ships no software. Two things read it, and
+# neither would work from anything else:
+#
+#   * `[project].version` is the anchor the engine compares every other version site
+#     against: `CHANGELOG.md`'s newest released heading, `uv.lock`'s entry for this
+#     project, and any line in README.md or docs/ that installs this project from a tag.
+#     A repository whose statements of its own version can disagree without anything
+#     failing has no version, only several numbers.
+#   * `uv lock` / `uv sync` need a project to lock, which is how the tooling below - ruff
+#     and the commit lane - arrives pinned rather than "whatever the machine has".
+#
+# `package = false` says the obvious thing mechanically: this directory is data, there is
+# nothing here to build or install, and `uv sync` should not try.
+
+[project]
+name = "__PROJECT_NAME__"
+version = "__VERSION__"
+description = "A radar catalogue: adoption state, evidence, and the environment profiles behind it."
+requires-python = ">=3.11"
+
+# Empty, and it is a constraint rather than an accident: the engine is installed as a tool
+# and this directory holds no code to import, so a runtime dependency here would be a
+# precondition for reading your own catalogue.
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+# The commit lane and the linter, which only ever run on a machine that has uv. They are
+# not runtime dependencies - see `dependencies` above.
+dev = [
+  "pre-commit>=4.0",
+  "ruff>=0.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# The entry directories hold data, never code. Ruff loads every `ruff.toml` it finds under
+# the project as a configuration file, and an entry's file is named after its tool, so an
+# entry for ruff itself (`tools/ruff.toml`) would otherwise stop `ruff check` and
+# `ruff format` from starting at all.
+extend-exclude = ["tools", "tools.local"]

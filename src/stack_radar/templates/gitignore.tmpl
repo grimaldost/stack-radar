@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Machine-local environment overlays, one `<env>.local.toml` per environment. The paths
+# and site-specific tooling they name are true of one workstation and false of every other, so
+# a committed overlay would break the next machine that pulled it. A profile names its
+# overlay (`overlay = "<env>.local.toml"` under [flags]), and every radar command that reads
+# the profile layers the overlay over it when the file exists.
+environments/*.local.toml
+
+# Machine-local TOOL entries: site-specific tooling whose NAME must not travel. The engine
+# loads them tagged `_local` and drops them before writing any tracked artefact, so
+# ignoring the directory cannot be defeated by rendering the README.
+tools.local/
+
+# The home directories of OTHER machines, declared so the redaction can map them out of
+# reports synced in from those machines. An account name is exactly what the redaction
+# exists to withhold, so the declaration cannot be tracked: committing it would publish
+# the name in order to say the name must not be published.
+redact.local.toml
+
+# A Windows reserved device name. A tool handed `--output /dev/null` from a POSIX shell on
+# Windows creates a FILE called `nul` here, after which git fails on every add with an
+# error that names mmap rather than the file.
+nul

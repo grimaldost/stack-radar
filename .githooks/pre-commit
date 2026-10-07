@@ -1,0 +1,20 @@
+#!/bin/sh
+# The pre-commit hook, installed with `git config core.hooksPath .githooks`.
+#
+# Not `pre-commit install`: its hook calls the console-script shim, which some machines
+# refuse to run (docs/new-environment.md, "Unsigned executables"). Invoking the module
+# through `uv run` avoids the shim and pins the project's own interpreter. `--frozen`
+# installs the project's dependencies from uv.lock alone: without it, uv resolves a
+# pyproject.toml that uv.lock no longer matches and installs the result, at commit time.
+# This project is built, and `--frozen` does not stop uv rebuilding it when pyproject.toml
+# changes, which installs the [build-system] requirements and runs the build backend that
+# pyproject.toml names - one reason pyproject.toml is a file to review (SECURITY.md).
+#
+# Tracked, so a fresh clone arms the lane with one command rather than a recipe. Skip a
+# run with `git commit --no-verify` when you mean to; CI runs the full set regardless.
+HERE=$(dirname "$0")
+exec uv run --frozen python -m pre_commit hook-impl \
+	--config=.pre-commit-config.yaml \
+	--hook-type=pre-commit \
+	--hook-dir "$HERE" \
+	-- "$@"

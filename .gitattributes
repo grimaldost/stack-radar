@@ -1,0 +1,11 @@
+# Normalize line endings to LF in the repo AND on checkout. Two reasons that are specific
+# rather than tidiness:
+#
+# 1. `.githooks/*` are `#!/bin/sh` scripts git executes directly. With core.autocrlf=true
+#    a checkout would hand them CRLF line endings, and a shell that carries the CR into
+#    the interpreter path or a line continuation fails in a way that reads as "the hook
+#    is broken" rather than "the checkout rewrote it".
+# 2. CI runs on Windows and on Linux, and a line-ending class of failure is invisible to
+#    a Linux-only leg: identical counts, diverging digests. A repo whose content hashes
+#    depend on which platform checked it out cannot be compared across the two.
+* text=auto eol=lf

@@ -1,0 +1,245 @@
+name: ci
+
+# Least privilege: every job checks out the tree and runs local tooling, and nothing here
+# calls a write API.
+permissions:
+  contents: read
+
+on:
+  push:
+  pull_request:
+  # Weekly, for the real-process run on Windows below, which is too slow for every push.
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          # The DECLARED FLOOR from pyproject.toml, not the newest release: the floor is a
+          # claim and nothing else checks it, so pinning it here exercises both ends of the
+          # supported range instead of assuming one.
+          python-version: '3.11'
+
+      # `uv lock --check` is FIRST, before anything that would rewrite the lock: no test can
+      # guard lock staleness, because `uv run` re-locks before a test could read the file.
+      - run: uv lock --check
+      - run: uv sync
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run ty check src
+      - run: uv run python -m pytest -q
+      # The same suite with every engine command started as a real process
+      # (tests/engine_run.py). The run above calls most commands in-process, which is what
+      # keeps it fast; this one shows the in-process runner hides nothing a process start
+      # would. On the leg where starting a process is cheap.
+      - if: runner.os == 'Linux'
+        run: uv run python -m pytest -q
+        env:
+          RADAR_TEST_SUBPROCESS: '1'
+      # The verb itself, over this repository, and not only the tests of its rule: the
+      # suite plants disagreements in synthetic trees, and this is what reads the real one.
+      - run: uv run radar check-version-sites
+
+  real-process-windows:
+    # The suite with every engine command started as a real process, on Windows. The
+    # in-process default never crosses a process boundary, so it cannot see the console
+    # encoding or argument quoting a Windows process start brings; the Linux leg above
+    # covers the process boundary but not those. Starting a process costs much more here,
+    # so this runs weekly and on demand rather than on every push.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          python-version: '3.11'
+      - run: uv sync
+      - run: uv run python -m pytest -q
+        env:
+          RADAR_TEST_SUBPROCESS: '1'
+
+  changelog-gate:
+    # A change to src/ has to be recorded in CHANGELOG.md or declare its exemption with a
+    # `Changelog: none (<reason>)` trailer, judged per commit. Only a pull request has a
+    # base to compare against, so the job runs for nothing else. The full history is
+    # fetched because the gate walks every commit since the merge base, and the base ref
+    # reaches the script through `env` rather than being pasted into shell text.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          python-version: '3.11'
+      - run: uv run radar changelog-gate "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
+  stranger-path:
+    # The stranger's path - init, add, gate and render in a directory that has never held a
+    # catalogue - exercised through the PACKAGED engine rather than through
+    # `python -m stack_radar.<module>` on a PYTHONPATH. The suite already runs that path
+    # (tests/test_init.py::TestTheStrangerPath) against the checkout's own src/ tree; what it
+    # cannot catch is a packaging defect - a template left out of the wheel, an entry point
+    # that resolves in a dev checkout and nowhere else - because it never leaves the tree.
+    # This job builds the distribution, installs it into a venv that has never seen this
+    # repository's source layout, and runs `radar` from there in a directory that has never
+    # held a catalogue.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          python-version: '3.11'
+
+      - run: uv build
+
+      - name: Install the built wheel into a clean environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/stranger-venv"
+          uv pip install --python "$RUNNER_TEMP/stranger-venv" dist/*.whl
+
+      - name: Put the installed radar on PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          venv="$RUNNER_TEMP/stranger-venv"
+          if [ -d "$venv/Scripts" ]; then
+            echo "$venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$venv/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: init, add, gate, render - in a directory that never held a catalogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="$RUNNER_TEMP/a-strangers-radar"
+          home="$RUNNER_TEMP/empty-claude-home"
+          mkdir -p "$home"
+
+          radar init "$target"
+          cd "$target"
+          radar add just --repo https://github.com/casey/just --axis build \
+            --ring observe --license CC0-1.0 --visibility public --artifact cli \
+            --note "a command runner, the engine's own neutral example entry" \
+            --reason "packaging smoke test - the stranger's path, in CI"
+
+          output="$(radar gate --claude-home "$home")"
+          echo "$output"
+          grep -q "0 FAIL" <<< "$output"
+
+          radar render
+          test -s README.md
+          test -s docs/radar/index.html
+
+  no-root:
+    # The resolver's other half: a command run where no `radar.toml` is above
+    # the working directory exits distinctly rather than silently reading a wrong catalogue
+    # or reporting a clean one. Exit 2 is the gate's own contract (radar_lib.begin_command) -
+    # 1 is spent on FAIL findings, so "there was no catalogue to judge" has to be a different
+    # number - and the failure names the marker rather than leaving the fix to be guessed at.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          python-version: '3.11'
+      - run: uv sync
+
+      - name: Put the synced venv on PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d .venv/Scripts ]; then
+            echo "$PWD/.venv/Scripts" >> "$GITHUB_PATH"
+          else
+            echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: radar gate outside any data root exits non-zero, naming radar.toml
+        shell: bash
+        run: |
+          set -euo pipefail
+          outside="$RUNNER_TEMP/no-radar-here"
+          mkdir -p "$outside"
+          cd "$outside"
+          set +e
+          output="$(radar gate 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          test "$status" -eq 2
+          grep -q "radar.toml" <<< "$output"
+
+  zizmor:
+    # Two repositories' GitHub configuration: this one's, and what `radar init` writes into
+    # every catalogue. The second is rendered from this checkout rather than read from the
+    # templates, because what reaches a catalogue is the rendered file with its values
+    # filled in. Each is scanned from its root, so dependabot.yml is audited with the
+    # workflows; this repository's scan runs before anything creates a virtualenv here.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # uv itself: pinned so a run is reproducible. setup-uv installs this exact version;
+          # bump it here by hand - Dependabot's action and uv-lock updaters do not move it.
+          version: '0.12.19'
+          python-version: '3.11'
+      - run: uvx zizmor==1.30.0 --min-severity high .
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: uv run radar init "$RUNNER_TEMP/rendered-catalogue"
+      - run: uvx zizmor==1.30.0 --min-severity high "$RUNNER_TEMP/rendered-catalogue"
+        env:
+          GH_TOKEN: ${{ github.token }}

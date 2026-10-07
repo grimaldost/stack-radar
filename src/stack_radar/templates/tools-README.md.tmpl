@@ -1,0 +1,40 @@
+# tools/
+
+One TOML file per entry, and the file name is the entry: `tools/ruff.toml` holds the tool
+called `ruff`. A name is written as its file name is - lowercase letters, digits, `.`, `_`
+and single hyphens, with no hyphen at either end, so `radar add` refuses `MyTool` and says
+to enter `mytool` - and no two entries claim one name, ignoring case. `radar gate` FAILs an
+entry that breaks either rule, so a file written by hand is held to it too. Everything the
+radar knows about a tool lives in its own file, so a change to one entry is a diff a
+reviewer can read, and the catalogue has no index to keep in step.
+
+Write one with `radar add`, which validates before it writes rather than after:
+
+```
+radar add ruff --repo https://github.com/astral-sh/ruff --axis lint-format --artifact cli --ring observe --license MIT --visibility public --note "Linter and formatter; a candidate for the lint lane" --reason "Entered the catalogue on first look"
+```
+
+One line, because a backslash continuation is sh syntax only: PowerShell and cmd read each
+line as a new command.
+
+Eight fields are required — `name`, `repo`, `axis`, `ring`, `license`, `visibility`, `note`,
+`artifact` — and every entry carries at least one dated `[[history]]` block. `axis` says
+which problem the tool addresses; `artifact` says what you install and where it runs, which
+is what decides context cost and blast radius; the axes are the catalogue's own when
+`radar.toml` declares them under `[entries]`. Run `radar add --help` for the values each
+field accepts, and `radar gate` for what an entry has to satisfy beyond its shape:
+
+- every `[[history]]` block carries a `date` (`YYYY-MM-DD`) and a `reason`, and a block at
+  `adopt` or `pilot` also carries `evidence` — what the claim of use rests on, which is
+  why `radar add` asks for `--evidence` at those rings;
+- a `pilot` entry needs `[pilot_exit]` — what would adopt it and what would decline it,
+  written BEFORE the data exists, which is the only property that makes it worth anything;
+- an `own` or `adopt` entry whose artifact is visible in a session needs a `[telemetry]`
+  matcher, because a ring is a claim about observed state and a claim with no instrument is
+  not checkable;
+- a `public` entry needs `repo` as a URL, because the public projection renders it as a
+  link.
+
+Machine-local entries — site-specific tooling whose NAME must not travel — go in `tools.local/`
+instead, which is gitignored. The engine loads them, the gate judges them, and the renderer
+drops them before writing any tracked file.

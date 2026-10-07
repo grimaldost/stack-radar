@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to this catalogue are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+A heading is `## [X.Y.Z] - YYYY-MM-DD`, and that grammar is load-bearing rather than
+cosmetic: it is the version site `radar check-version-sites` compares against
+`pyproject.toml`, so a heading written some other way is a version site that has quietly
+stopped existing.
+
+WHAT BELONGS HERE, and what does not. This file records changes to what the repository
+ships as SOFTWARE - the paths named by `[changelog].prefixes` in `radar.toml`. It does not
+record catalogue content: a ring transition carries its own dated `[[history]]` entry with
+its reason inside the tool's own file, which is a better record than a changelog line
+because the gate can read it.
+
+## [Unreleased]
+
+## [__VERSION__] - __DATE__
+
+### Added
+
+- The catalogue itself, created by `radar init` (engine __ENGINE_VERSION__): the
+  `radar.toml` marker, an environment profile with this machine's discovered paths, a
+  `tools/` holding only its README, the commit lane, and a CI workflow.

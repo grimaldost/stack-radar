@@ -1,0 +1,24 @@
+#!/bin/sh
+# The catalogue's pre-commit hook, installed with `git config core.hooksPath .githooks`.
+#
+# TRACKED rather than generated, so a fresh clone arms the lane with one command instead of
+# a recipe. `.pre-commit-config.yaml` records why this calls the module through
+# `uv run --frozen` rather than the `pre-commit` shim. Tracked also means a pull request can
+# change what runs here on every commit: review a change to `.githooks/` as a code change.
+#
+# Skip a run with `git commit --no-verify` when you mean to; CI runs the full set anyway.
+#
+# IF THIS HOOK NEVER RUNS, two causes account for almost every case. On Linux and macOS git
+# SKIPS a hook that is not executable and says nothing, so a clone where the mode bit was
+# lost reports the lane armed while nothing fires:
+#     git update-index --chmod=+x .githooks/pre-commit .githooks/commit-msg
+# And a checkout that rewrote this file's line endings to CRLF leaves `/bin/sh` reading a
+# carriage return as part of the interpreter path, which fails as if the hook were broken.
+# The `.gitattributes` that `radar init` writes keeps every text file LF; if it is gone:
+#     printf '* text=auto eol=lf\n' >> .gitattributes
+HERE=$(dirname "$0")
+exec uv run --frozen python -m pre_commit hook-impl \
+	--config=.pre-commit-config.yaml \
+	--hook-type=pre-commit \
+	--hook-dir "$HERE" \
+	-- "$@"

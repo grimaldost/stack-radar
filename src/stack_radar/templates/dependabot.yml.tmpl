@@ -1,0 +1,29 @@
+# Keeps the pinned actions in `.github/workflows/` and the locked dev tools in `uv.lock`
+# (ruff, pre-commit) current.
+#
+# The workflow pins every action to a commit rather than a tag, because a tag can be moved
+# to other code after the fact, and `uv.lock` pins every package to one version. A pin
+# never moves on its own, so without something proposing updates it stays on whatever
+# version the catalogue was created with, including after that version gets a security
+# fix. Dependabot opens a pull request per update, and the workflow judges it like any
+# other change. The commit-message hook in `.pre-commit-config.yaml` is pinned to a commit
+# too, and is moved by hand: `uv run --frozen python -m pre_commit autoupdate --freeze`.
+#
+# The cooldown holds a new release back for a week before proposing it. A compromised
+# release is usually found and pulled within days, and a pin that waits is a pin that
+# never picks it up.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

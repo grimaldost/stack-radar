@@ -1,0 +1,10 @@
+# Line endings are LF in the repository AND on checkout, on every platform. Two reasons:
+#
+# 1. `.githooks/*` are `#!/bin/sh` scripts git executes directly. A checkout that rewrote
+#    them with CRLF endings would hand the shell a carriage return as part of the
+#    interpreter path, which fails as if the hook were broken.
+# 2. The engine writes every generated file - README.md, the radar page, snapshots, field
+#    reports - with LF endings, and the generated CI runs on Linux and on Windows. A
+#    checkout that converted them would show each one as changed on the machine that did
+#    not create it.
+* text=auto eol=lf

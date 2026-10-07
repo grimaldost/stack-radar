@@ -1,0 +1,76 @@
+# The commit lane: the fast half of CI, run before a commit lands instead of after a push,
+# plus the commit-message check CI has no seat for.
+#
+# Arm it once per clone:
+#     git config core.hooksPath .githooks
+#
+# That points git at the TRACKED `.githooks/`: its scripts run on every commit, and a hook
+# a checked-out branch adds there runs on the next checkout or commit. So a pull request
+# that changes `.githooks/`, this file, `uv.lock`, `pyproject.toml`, `uv.toml` or
+# `.python-version` changes code that runs on your machine - review it before checking the
+# branch out.
+#
+# NOT `pre-commit install`: its hooks call the `pre-commit` console-script shim, which
+# some machines refuse to run (docs/new-environment.md, "Unsigned executables"). The
+# tracked scripts in `.githooks/` call this config through
+# `uv run --frozen python -m pre_commit` instead, which also pins the project's own
+# interpreter. Every `uv run` here is `--frozen`: uv installs the project's dependencies
+# from `uv.lock` alone, rather than resolving a `pyproject.toml` that `uv.lock` no longer
+# matches and installing the result. This project is built, so a changed `pyproject.toml`
+# still makes uv rebuild it, which installs its `[build-system]` requirements and runs its
+# build backend; that is why `pyproject.toml` is on the list above.
+#
+# Run the lane by hand:
+#     uv run --frozen python -m pre_commit run --all-files
+#
+# What is deliberately absent: `ty` and the test suite. Both judge the whole tree rather
+# than the staged change and take long enough that a hook running them gets skipped with
+# `--no-verify`; CI runs both on every push.
+repos:
+  - repo: local
+    hooks:
+      # Local `language: system` hooks, so ruff is the version `uv.lock` pins - the one CI
+      # runs - rather than a second pinned copy that drifts from it.
+      #
+      # pre-commit passes the staged Python files, so an untracked scratch file in the
+      # working tree cannot block a commit it is not part of. `--force-exclude` keeps
+      # ruff's own `exclude` settings in force for files named on the command line.
+      - id: ruff-format-check
+        name: ruff format --check
+        entry: uv run --frozen ruff format --check --force-exclude
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --frozen ruff check --force-exclude
+        language: system
+        types: [python]
+        stages: [pre-commit]
+
+  # The commit-message lane (the .githooks/commit-msg wrapper runs it). A conventional
+  # subject is what lets a tool read the history: the changelog gate reads commit messages
+  # for its exemption trailer, and a release reads them to find what moved.
+  #
+  # Pinned to a COMMIT, not a tag: a tag can be moved to other code by anyone with push
+  # rights on that repository, and this hook runs on every commit. The `# frozen:` comment
+  # names the tag the commit was taken from, which is the form
+  # `pre-commit autoupdate --freeze` writes when you move the pin.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: 5f9c312d9978fbcee1da97154ba385834eeda799  # frozen: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args:
+          - feat
+          - fix
+          - docs
+          - style
+          - refactor
+          - perf
+          - test
+          - chore
+          - build
+          - ci
+          - release

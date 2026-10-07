@@ -1,0 +1,123 @@
+# The marker that makes this directory a radar DATA ROOT.
+#
+# The engine walks up from the working directory until it finds this file, the way git
+# finds `.git`. That is the only form of discovery: `--data-root` and `RADAR_DATA_ROOT`
+# exist for CI, and each of them still has to name a directory that carries this file.
+#
+# Written by the catalogue and read by the engine, and that direction is the contract.
+# `schema` is versioned, the required fields are named below, and a change of shape is a
+# change of `schema` rather than a field quietly meaning something else.
+
+schema = "radar-data/v1"
+
+# The title every generated artefact carries - `README.md` and the radar page, and
+# `PUBLIC.md` with the public projection. It is a DATUM this catalogue holds rather than
+# the engine's identity, which is the whole reason it lives here: one engine serves any
+# number of catalogues and must not title yours after itself or after anybody else's.
+title = "__TITLE__"
+
+# The environment that `radar field`, `radar reconcile`, `radar versions` and
+# `radar sync-feedback` read when `--env` is left out. A property of the catalogue, not of
+# the code that reads it, so renaming your profiles is one edit here. `radar apply`,
+# `radar bootstrap` and `radar render-feedback-targets` always require `--env`: each of them
+# converges or writes something for one named machine.
+default_environment = "__DEFAULT_ENVIRONMENT__"
+
+# The engine versions this catalogue can be read by, checked on every command except the
+# two that judge whatever repository they are run from (`changelog-gate` and
+# `check-version-sites`). An old engine reading a new catalogue is the failure mode that
+# two repositories create, and it is silent: a field it does not know about is simply not
+# applied. So the check is mechanical and names both versions when it bites.
+#
+# Written from the engine that created this root, as a minor-compatible range. Widen it
+# when you have tried a newer engine against this catalogue, not before.
+requires_framework = "__REQUIRES_FRAMEWORK__"
+
+# The control-plane invariant, as data. A radar is a CONTROL PLANE: it reads and writes
+# the stack it governs, and the stack must never reference it back, or a working session
+# starts depending on this directory's presence. The gate falsifies that by grepping the
+# governed tree for the strings below plus this directory's own absolute path.
+#
+# A GENERIC NAME IS A WEAK NEEDLE, and the weakness is invisible in the output. A needle
+# that also occurs in ordinary prose fails loudly and often, so you fix it or you drop it;
+# a needle that occurs nowhere - because this directory was renamed and this key was not -
+# passes in silence over a governed tree that does reference the catalogue by name. An
+# EMPTY list is legal and leaves the scan running on the absolute path alone: the scan
+# still prints `holds`, about half of what a reader assumes it is about, which is why the
+# gate says out loud which of the two lists it used. Seeded with this directory's name;
+# change it when you rename the directory, and say what else the catalogue is called.
+[invariant]
+needles = ["__NEEDLE__"]
+
+# WHAT THE SCAN READS under each profile's `claude_home`. The engine always reads the
+# generic Claude Code files - `settings.json`, `CLAUDE.md`, `skills/`, `plugins/` - and the
+# `feedback-targets.toml` it renders there. Anything else your stack keeps under
+# `claude_home` and loads into a session is named here, relative to `claude_home`, so the
+# scan reaches it too. A path that does not exist on a machine is skipped there.
+#
+# claude_home_paths = ["agents", "hooks/pre-tool.sh"]
+
+# THE ESCAPE VALVE, and it is deliberately narrow. A data-plane file that lists a needle
+# among terms it FORBIDS is asserting this catalogue's absence, not depending on its
+# presence - the grep cannot tell those apart, and the reading is true of a given file and
+# an easy lie elsewhere. So exemptions are named ONE AT A TIME, never inferred from
+# context, and the reason is printed on every run: that sentence is the whole
+# accountability of the mechanism.
+#
+# A key is an `endswith` SUFFIX, not a substring. Prefer dir+basename over a path rooted in
+# a worktree when the same module is served from more than one place - a checkout AND every
+# versioned copy in a plugin cache, say - or the key matches the original and misses the
+# copies.
+#
+# Rows go INSIDE this table. Writing `[invariant.exempt."some/path.py"]` with the reason
+# under it parses as valid TOML and is IGNORED with a note, because a nested table is not a
+# reason string. Undeclared is the strictest reading and the right default.
+#
+# [invariant.exempt]
+# "widget/denylist.py" = "lists the name among terms it forbids - a negative assertion"
+
+# THE PUBLICATION CHECK, for a catalogue whose operator also maintains a public checkout
+# of something - a published tool, a fork of the engine. `framework_worktree` names that
+# checkout, and the gate compares what it tracks against this catalogue's needles plus
+# `forbid_extra`, the operator's own additions (a login name, a private remote), so that
+# nothing naming the catalogue travels into what is published.
+#
+# The check is OFF until `framework_worktree` is declared, and the gate says so in one
+# line. The empty table is deliberate: most catalogues publish nothing. Note before you
+# fill `forbid_extra` in that this file is TRACKED, so the strings that most want to be in
+# that key are exactly the ones a tracked file should not carry.
+[publish]
+
+# What the changelog gate judges in THIS repository: which paths count as the code it
+# ships, and which files define a surface something else keys on. One engine serves
+# repositories whose answers differ - a catalogue's content is its entries, and content
+# records itself in a dated history entry rather than in a changelog.
+#
+# `prefixes` is seeded with `scripts/` before anything is there, and that is the useful
+# direction: a watch declared in advance reaches the code on the day it lands, while a
+# watch added afterwards misses exactly the change that introduced the thing. Point it
+# somewhere else if your helpers live somewhere else.
+#
+# `contract_surfaces` is left absent, because a surface cannot be named before it exists.
+# While the key is missing the engine's own surfaces are inherited and match nothing in a
+# catalogue, which costs nothing: that check is advisory and prints a warning at most.
+[changelog]
+prefixes = ["scripts/"]
+# contract_surfaces = ["scripts/your_module.py"]
+
+# THE AXES an entry may declare - which problem a tool addresses. Left out, the engine's
+# default set applies, and `radar add --help` lists it: build, lint-format, testing,
+# agent-plugins, mcp-servers and other. A catalogue that wants axes of its own declares
+# the list here, which REPLACES the default for the gate, `radar add --axis` and the
+# rendered page. Each axis is lowercase letters and digits in words joined by single
+# hyphens.
+#
+# [entries]
+# axes = ["build", "lint-format", "testing", "agent-plugins", "mcp-servers", "docs", "other"]
+
+# What the renderer writes verbatim into `README.md`, ahead of the ring tables: where this
+# radar's authority ends. Seeded with the engine's generic default, which asserts nothing
+# about your catalogue; replace it with your own boundary once you have drawn one, because a
+# boundary nobody wrote down is a boundary two files will both claim.
+[render]
+boundary_note = "__BOUNDARY_NOTE__"
