@@ -74,3 +74,19 @@ repos:
           - build
           - ci
           - release
+
+  # The attribution rule from CONTRIBUTING.md ("No AI-attribution trailers"), checked where
+  # the message is written: no CI job checks a message for it. A local hook, plain sed and
+  # grep under bash, so there is no source to pin and no `uv run` to freeze. It drops the
+  # comment lines and everything below git's scissors line (the diff `git commit -v` adds),
+  # then refuses the common forms: a `*-by:` trailer naming a known assistant or its bot
+  # address (Claude, ChatGPT/GPT, Codex, Copilot, Gemini, Cursor, Devin's bot, Windsurf), and a
+  # "generated with" or "created by" footer naming one. A trailer for a person who happens
+  # to be called Claude passes; an indented quote of a trailer in a body passes too.
+  - repo: local
+    hooks:
+      - id: no-ai-attribution
+        name: no AI attribution in the commit message
+        entry: bash -c 'if sed -e "/^# -\{24\} >8 -\{24\}\$/,\$d" -e "/^#/d" "$1" | grep -Ei "^[a-z-]+-by[[:space:]]*:.*(noreply@anthropic|claude\[bot\]|claude[[:space:]]*(<|\$)|claude (code|opus|sonnet|haiku|fable|[0-9])|chatgpt|gpt-?[0-9]|codex|copilot|gemini|cursor|devin-ai|windsurf)|^([^[:alnum:][:space:]]+[[:space:]]+)?(generated|created|written|made) (with|by)[^[:alnum:]]*(claude|chatgpt|gpt|copilot|gemini|cursor|codex)"; then echo "The commit message carries an AI-attribution trailer or footer; remove the line and commit again (CONTRIBUTING.md, Commits)."; exit 1; fi' --
+        language: system
+        stages: [commit-msg]
