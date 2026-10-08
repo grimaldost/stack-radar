@@ -216,6 +216,30 @@ subject the commit-msg hook asks for: there is no earlier commit for it to roll 
 and its subject is `stack-radar X.Y.Z`, the same text as the annotated tag laid on it.
 Every later commit follows both rules.
 
+## The freeze from 0.2.1
+
+Since 2026-10-08 the engine is frozen at 0.2.1: until the decision below, the only changes
+that land are fixes for a security problem or a breakage, and a release is cut only to ship
+one. A pull request that adds a feature waits. For the maintainer's own operation of the
+engine over the same period, `radar versions` and `radar apply --check` are informational
+(they report drift and nothing acts on it), and `radar snapshot` runs monthly.
+
+The freeze ends with a dated decision, written down before the measurement it depends on.
+The measurement is the maintainer's own: a 30-day window of `radar field` over their own
+catalogue, opening on the day the last of a batch of releases of their other tools is
+merged (expected in mid-October 2026), with an intermediate count on 2026-10-27. The rule,
+approved by the maintainer on 2026-10-08:
+
+- If the re-measurement that closes the window yields no ring movement and no finding that
+  was acted on, the radar is replaced by plain files: this engine is no longer developed and
+  stays published as it is.
+- Otherwise the programme continues, and the same review decides whether the freeze ends.
+
+A ring movement is a ring transition recorded in an entry's `[[history]]` whose evidence is
+the re-measurement; tidying entries at `observe` or `discard` does not count. A finding was
+acted on if, within 14 days of the window's close, it led to a recorded change: a pull
+request, an uninstall or a written decision.
+
 ## What a change should not do
 
 - **Name a particular catalogue, or the tools in one.** One engine serves any number of
