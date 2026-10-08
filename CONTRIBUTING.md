@@ -2,9 +2,9 @@
 
 This document is mostly about what the checks hold a change to, and why each one is where
 it is. Most of what follows is enforced by a check. The rest is held by review: the
-commit-body conventions under *Commits* (no AI-attribution trailers, red proofs, a verifier
-not edited in the change it judges) and most of *What a change should not do*. None of it is
-a matter of taste.
+commit-body conventions under *Commits* (no AI-attribution trailers, which the commit lane
+also checks in their common forms; red proofs; a verifier not edited in the change it
+judges) and most of *What a change should not do*. None of it is a matter of taste.
 
 ## Set up
 
@@ -100,10 +100,13 @@ The rebuild installs the `[build-system]` requirements and runs the build backen
 At `pre-commit`, the lane runs `ruff format --check` and `ruff check` on the staged Python
 files, through `uv run --frozen`, so the ruff that runs is the one `uv.lock` pins. At
 `commit-msg`, it runs `compilerla/conventional-pre-commit`, pinned to a commit, which
-refuses a subject that is not a Conventional Commit. The first commit after arming fetches
-that hook into pre-commit's cache, which needs network access once. Run the lane by hand
-with `uv run --frozen python -m pre_commit run --all-files`, and skip it for one commit with
-`git commit --no-verify` when you mean to; CI runs the full list regardless.
+refuses a subject that is not a Conventional Commit, and `no-ai-attribution`, a local
+`grep` over the message file, which refuses the common forms of AI attribution (see
+*Commits*). The first commit after arming fetches `conventional-pre-commit` into
+pre-commit's cache, which needs network access once. Run the lane by hand with
+`uv run --frozen python -m pre_commit run --all-files`, and skip it for one commit with
+`git commit --no-verify` when you mean to. CI runs the checks list regardless; neither
+commit-message hook has a CI counterpart.
 
 The hooks are tracked files rather than generated ones so that a fresh clone arms the lane
 with one command. They deliberately do **not** go through `pre-commit install`, whose hooks
@@ -128,7 +131,13 @@ Conventional Commits: `feat fix docs style refactor perf test chore build ci rel
 imperative subject, one concern per commit.
 
 **No AI-attribution trailers.** Not `Co-Authored-By` lines naming a model, not "generated
-with" footers, not anywhere in the message.
+with" footers, not anywhere in the message. At `commit-msg`, the `no-ai-attribution` hook
+refuses the common forms: a `*-by:` trailer that names a known assistant (Claude, ChatGPT or
+GPT, Codex, Copilot, Gemini, Cursor, Windsurf, or Devin's bot) or its bot address, and a
+"generated with" or "created by" footer that names one. It reads the message above git's
+scissors line and skips comment lines, so a person called Claude, an indented quote and the
+diff of `git commit -v` all pass. No CI job checks a message for this rule, and the hook
+does not catch every form, so review holds the rest.
 
 **Red proofs go in the body.** Every check that ships carries recorded proof that it can
 fail: the new test run against the pre-change code, with the failing assertion pasted under a
@@ -206,6 +215,30 @@ release. It is the one exception to the release-commit rule, and to the Conventi
 subject the commit-msg hook asks for: there is no earlier commit for it to roll forward from,
 and its subject is `stack-radar X.Y.Z`, the same text as the annotated tag laid on it.
 Every later commit follows both rules.
+
+## The freeze from 0.2.1
+
+Since 2026-10-08 the engine is frozen at 0.2.1: until the decision below, the only changes
+that land are fixes for a security problem or a breakage, and a release is cut only to ship
+one. A pull request that adds a feature waits. For the maintainer's own operation of the
+engine over the same period, `radar versions` and `radar apply --check` are informational
+(they report drift and nothing acts on it), and `radar snapshot` runs monthly.
+
+The freeze ends with a dated decision, written down before the measurement it depends on.
+The measurement is the maintainer's own: a 30-day window of `radar field` over their own
+catalogue, opening on the day the last of a batch of releases of their other tools is
+merged (expected in mid-October 2026), with an intermediate count on 2026-10-27. The rule,
+approved by the maintainer on 2026-10-08:
+
+- If the re-measurement that closes the window yields no ring movement and no finding that
+  was acted on, the radar is replaced by plain files: this engine is no longer developed and
+  stays published as it is.
+- Otherwise the programme continues, and the same review decides whether the freeze ends.
+
+A ring movement is a ring transition recorded in an entry's `[[history]]` whose evidence is
+the re-measurement; tidying entries at `observe` or `discard` does not count. A finding was
+acted on if, within 14 days of the window's close, it led to a recorded change: a pull
+request, an uninstall or a written decision.
 
 ## What a change should not do
 
