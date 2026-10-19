@@ -120,7 +120,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Generator, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -408,7 +408,7 @@ def catalogue_argv(cmd: str, root: Path) -> list[str]:
 
 
 @contextmanager
-def scratch_dir() -> Iterator[Path]:
+def scratch_dir() -> Generator[Path, None, None]:
     """A fresh, empty working directory for one catalogue command, removed afterwards.
 
     Empty, so a program that looks in its working directory for modules, binaries or
