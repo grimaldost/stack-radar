@@ -1135,8 +1135,7 @@ def validate(t: dict, axes: Sequence[str] | None = None) -> list[str]:
         # demotion would let a parked experiment come back later with fresh, conveniently
         # looser criteria — pre-registration laundering. The block stays as the record of
         # what was promised; the ring says whether it is currently being tested.
-        was_pilot = any(h.get("ring") == "pilot" for h in (t.get("history") or []))
-        if t.get("ring") not in ("pilot", "own") and not was_pilot:
+        if t.get("ring") not in ("pilot", "own") and not was_pilot(t):
             errs.append("[pilot_exit] is only for ring=pilot/own tools, or one previously piloted")
         for k in ("review_after_days", "adopt_if", "decline_if"):
             if not px.get(k):
@@ -1229,6 +1228,16 @@ def history_errors(t: dict) -> list[str]:
     if hist[-1].get("ring") != t.get("ring"):
         errs.append(f"ring {t.get('ring')!r} != last history ring {hist[-1].get('ring')!r}")
     return errs
+
+
+def was_pilot(t: dict) -> bool:
+    """Whether the entry's history records a stay at ring `pilot`.
+
+    The one definition of "previously piloted": the schema check lets such an entry keep a
+    `[pilot_exit]` block at any ring, and `radar field` words its note about a block that
+    is not under evaluation by it.
+    """
+    return any(h.get("ring") == "pilot" for h in (t.get("history") or []))
 
 
 def missing_pilot_exit(t: dict) -> bool:

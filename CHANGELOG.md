@@ -10,6 +10,19 @@ released heading is one of the version sites `radar check-version-sites` compare
 existing. Changes marked **(consumer-affecting)** alter what a reader of the entry schema,
 the field report or the gate's exit code sees.
 
+## [Unreleased]
+
+### Fixed
+
+- **`radar field` no longer calls a `[pilot_exit]` block "retained from an earlier pilot" on an
+  entry that never was a pilot.** The schema allows the block at `ring = "own"` (authorship is
+  not an exemption from evidence), and the report's finding and Markdown section described it
+  as the leftover of an experiment that ended. They now say it is recorded and not evaluated
+  at that ring, and are evaluated only at `ring = "pilot"`; an entry whose `[[history]]` shows
+  a stay at `pilot` keeps the old wording. The report document gains a `was_pilot` boolean
+  beside `pilot_exit_evaluated`. Nothing is evaluated differently: the same blocks are
+  evaluated and the same checks run. (consumer-affecting)
+
 ## [0.2.1] - 2026-10-07
 
 Versions before 0.2.1 were developed privately and their history is not published.
