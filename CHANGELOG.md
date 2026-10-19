@@ -10,6 +10,15 @@ released heading is one of the version sites `radar check-version-sites` compare
 existing. Changes marked **(consumer-affecting)** alter what a reader of the entry schema,
 the field report or the gate's exit code sees.
 
+## [Unreleased]
+
+### Fixed
+
+- **`ty` 0.0.85 passes.** `trust.scratch_dir`, a `@contextmanager` function, is annotated
+  `-> Generator[Path, None, None]` instead of `-> Iterator[Path]`, the form `ty` 0.0.85 reports
+  as a deprecated overload. The annotation is the whole change: no behaviour moves. The dev
+  dependency lock takes `ty` 0.0.85 with it.
+
 ## [0.2.1] - 2026-10-07
 
 Versions before 0.2.1 were developed privately and their history is not published.
