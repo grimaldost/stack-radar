@@ -45,6 +45,7 @@ from .radar_lib import (
     load_tools,
     placeholder_error,
     reports_profile_errors,
+    was_pilot,
 )
 from .redact import extra_homes, redact_homes, redact_text, scoped_terms
 from .render import md_code, md_text
@@ -1045,12 +1046,20 @@ def render_md(d: dict) -> str:
     px = d["pilot_exit"]
     L += ["## Pilot exit criteria (verbatim, as pre-registered)", ""]
     if px is not None and not d.get("pilot_exit_evaluated"):
-        L += [
-            f"Retained from an earlier pilot and NOT evaluated: the entry is at "
-            f'`ring = "{d["ring"]}"`. They are kept as the record of what was promised '
-            "before the data existed, and they apply again if it is re-piloted.",
-            "",
-        ]
+        if d.get("was_pilot"):
+            L += [
+                f"Retained from an earlier pilot and NOT evaluated: the entry is at "
+                f'`ring = "{d["ring"]}"`. They are kept as the record of what was promised '
+                "before the data existed, and they apply again if it is re-piloted.",
+                "",
+            ]
+        else:
+            L += [
+                f'Recorded and NOT evaluated: the entry is at `ring = "{d["ring"]}"` and '
+                "was never a pilot. They are kept as pre-registered, and they are evaluated "
+                'only while the entry is at `ring = "pilot"`.',
+                "",
+            ]
     if px is None and d["ring"] != "pilot":
         L += [
             f'Not a pilot: the entry is at `ring = "{d["ring"]}"`, and only a pilot owes '
@@ -1531,13 +1540,21 @@ def run_tool(
     px = tool.get("pilot_exit")
     in_pilot = tool.get("ring") == "pilot"
     checks: list[dict] = []
-    if px and not in_pilot:
+    if px and not in_pilot and was_pilot(tool):
         findings.append(
             f"[NOTE] {name}: [pilot_exit] retained from an earlier pilot and NOT "
             f"evaluated - the entry is at ring={tool.get('ring')!r}. The criteria stay on "
             "the entry as the record of what was promised; they apply again if it is "
             "re-piloted, and re-writing them at that point would be pre-registration "
             "laundering."
+        )
+    elif px and not in_pilot:
+        # Allowed by the schema at ring=own (radar_lib.validate), never piloted: the block
+        # is a record made up front, not a leftover of an experiment that ended.
+        findings.append(
+            f"[NOTE] {name}: [pilot_exit] recorded but NOT evaluated - the entry is at "
+            f"ring={tool.get('ring')!r} and was never a pilot. The criteria stay on the "
+            "entry as pre-registered; they are evaluated only while it is at ring='pilot'."
         )
     elif px:
         rad = px.get("review_after_days")
@@ -1813,6 +1830,7 @@ def run_tool(
         "reconcile": reconcile,
         "pilot_exit": px,
         "pilot_exit_evaluated": bool(px) and in_pilot,
+        "was_pilot": was_pilot(tool),
         "checks": checks,
         "findings": findings,
         # The raw call list is the audit trail behind the aggregates. It is capped so a

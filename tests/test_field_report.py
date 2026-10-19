@@ -494,6 +494,42 @@ class TestPilotExitGating:
         assert len(retained) == 1
         assert retained[0].startswith("[NOTE]")
 
+    def test_a_block_on_an_own_entry_that_never_piloted_is_not_called_a_leftover(self, radar):
+        # The schema allows [pilot_exit] at ring=own (authorship is not exemption from
+        # evidence), so the block can exist on an entry that was never a pilot. Calling it
+        # "retained from an earlier pilot" is false for that entry, and the evaluation
+        # logic is unchanged: the block is recorded and not evaluated.
+        radar.tool("widget", cli_entry("widget", '"widget"', ring="own") + PILOT_EXIT)
+        radar.session("s1", [note("2026-08-10T09:00:00.000Z")], mtime=epoch("2026-08-10"))
+        doc = radar.report("widget", *WINDOW)
+        notes = [f for f in doc["findings"] if "[pilot_exit]" in f]
+        assert len(notes) == 1, doc["findings"]
+        assert notes[0].startswith("[NOTE]")
+        assert "earlier pilot" not in notes[0]
+        assert "recorded but NOT evaluated" in notes[0]
+        assert "never a pilot" in notes[0]
+        assert doc["pilot_exit_evaluated"] is False
+        assert doc["was_pilot"] is False
+        assert doc["checks"] == []
+        radar.run("widget", *WINDOW)
+        md = (radar.root / "field" / "widget" / "2026-08-01_2026-08-31.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Recorded and NOT evaluated" in md
+        assert "earlier pilot" not in md
+
+    def test_a_block_on_a_demoted_pilot_still_says_it_is_from_an_earlier_pilot(self, radar):
+        radar.tool("widget", self._entry("observe"))
+        radar.session("s1", [note("2026-08-10T09:00:00.000Z")], mtime=epoch("2026-08-10"))
+        doc = radar.report("widget", *WINDOW)
+        assert doc["was_pilot"] is True
+        radar.run("widget", *WINDOW)
+        md = (radar.root / "field" / "widget" / "2026-08-01_2026-08-31.md").read_text(
+            encoding="utf-8"
+        )
+        assert "Retained from an earlier pilot and NOT evaluated" in md
+        assert "never a pilot" not in md
+
     def test_criteria_are_evaluated_while_the_entry_is_in_pilot(self, radar):
         radar.tool("widget", self._entry("pilot"))
         radar.session("s1", [note("2026-08-10T09:00:00.000Z")], mtime=epoch("2026-08-10"))
