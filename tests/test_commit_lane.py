@@ -32,6 +32,12 @@ is rebuilt when `pyproject.toml` changes, and the rebuild installs the `[build-s
 requirements and runs the build backend that file names. The last test here holds that
 it does, which is the reason the documents give for keeping `pyproject.toml` on the
 review list.
+
+Last, THE ATTRIBUTION HOOK IS THERE AND WORKS. The `no-ai-attribution` hook is the only
+thing that enforces CONTRIBUTING's "No AI-attribution trailers" (no CI job reads a commit
+message), and nothing else here names it: deleting it, or loosening its pattern until it
+matches nothing, would leave every other test green. The tests at the end run the hook the
+way git does, through pre-commit at the `commit-msg` stage, against message files.
 """
 
 from __future__ import annotations
@@ -345,3 +351,105 @@ def test_a_built_project_still_runs_the_build_backend_pyproject_names(tmp_path: 
             "them in line with what uv does now.\n" + after.stdout + after.stderr
         )
         assert "hook ran" in after.stdout, after.stdout + after.stderr
+
+
+ATTRIBUTION_HOOK = "no-ai-attribution"
+
+
+def run_attribution_hook(tmp_path: Path, message: str) -> subprocess.CompletedProcess[str]:
+    """Run the `no-ai-attribution` hook on `message` as git does at `commit-msg`.
+
+    Through `pre-commit run --hook-stage commit-msg`, so the hook's id, its stage and its
+    entry are all exercised. The config is copied into a scratch repository and staged
+    there: pre-commit refuses a config with unstaged changes, which would fail these tests
+    in the middle of an edit to the very file they judge, and the scratch repository gives
+    it a cache of its own, so nothing is written to the machine's `~/.cache/pre-commit`.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["PRE_COMMIT_HOME"] = str(tmp_path / "pre-commit-home")
+    shutil.copy(REPO / CONFIG, repo / CONFIG)
+    subprocess.run(  # noqa: S603, S607 - fixed argv, no shell
+        ["git", "init", "-q"], cwd=repo, env=env, check=True, capture_output=True
+    )
+    subprocess.run(  # noqa: S603, S607 - fixed argv, no shell
+        ["git", "add", CONFIG], cwd=repo, env=env, check=True, capture_output=True
+    )
+    msg = tmp_path / "COMMIT_EDITMSG"
+    msg.write_bytes(message.encode("utf-8"))
+    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+        [
+            sys.executable,
+            "-m",
+            "pre_commit",
+            "run",
+            ATTRIBUTION_HOOK,
+            "--hook-stage",
+            "commit-msg",
+            "--commit-msg-filename",
+            str(msg),
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=120,
+    )
+
+
+def test_the_config_declares_the_attribution_hook_at_commit_msg():
+    declared = (REPO / CONFIG).read_text(encoding="utf-8")
+    block = re.search(
+        rf"^\s*- id: {ATTRIBUTION_HOOK}\s*$(.*?)(?=^\s*- id: |^\s*- repo: |\Z)",
+        declared,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert block, (
+        f"{CONFIG} declares no `{ATTRIBUTION_HOOK}` hook, so CONTRIBUTING's rule against "
+        "AI-attribution trailers is checked by nothing"
+    )
+    assert re.search(r"stages:\s*\[\s*commit-msg\s*\]", block.group(1)), (
+        f"`{ATTRIBUTION_HOOK}` is not at the `commit-msg` stage, the only place a message "
+        "can be read before it is written"
+    )
+
+
+SCISSORS = "# " + "-" * 24 + " >8 " + "-" * 24
+
+# CONTRIBUTING: "a person called Claude, an indented quote and the diff of `git commit -v`
+# all pass".
+ORDINARY_MESSAGES = {
+    "plain": "fix(trust): annotate scratch_dir\n\nNo behaviour moves.\n",
+    "person-called-claude": "docs: thank a reviewer\n\nCo-Authored-By: Claude Monet <monet@example.org>\n",
+    "indented-quote": "docs: explain the rule\n\n    Co-Authored-By: Claude <noreply@anthropic.com>\n",
+    "comment-line": "fix: x\n\n# Co-Authored-By: Claude <noreply@anthropic.com>\n",
+    "below-scissors": f"fix: x\n\n{SCISSORS}\n+Co-Authored-By: Claude <noreply@anthropic.com>\n",
+}
+
+ATTRIBUTED_MESSAGES = {
+    "claude-trailer": "fix: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n",
+    "claude-model-trailer": "fix: x\n\nCo-Authored-By: Claude Opus 4 <noreply@anthropic.com>\n",
+    "bot-address-only": "fix: x\n\nCo-authored-by: Assistant <noreply@anthropic.com>\n",
+    "generated-with-footer": "fix: x\n\n\U0001f916 Generated with [Claude Code](https://claude.com/claude-code)\n",
+    "plain-generated-with": "fix: x\n\nGenerated with Claude Code\n",
+}
+
+
+@pytest.mark.parametrize("message", ORDINARY_MESSAGES.values(), ids=ORDINARY_MESSAGES.keys())
+def test_the_attribution_hook_accepts_an_ordinary_message(tmp_path: Path, message: str):
+    done = run_attribution_hook(tmp_path, message)
+    out = done.stdout + done.stderr
+    # `Passed` is asserted as well as the exit code: a hook that is missing, or skipped for
+    # want of a file, must not read as a pass.
+    assert done.returncode == 0 and "Passed" in out, out
+
+
+@pytest.mark.parametrize("message", ATTRIBUTED_MESSAGES.values(), ids=ATTRIBUTED_MESSAGES.keys())
+def test_the_attribution_hook_rejects_an_ai_attribution(tmp_path: Path, message: str):
+    done = run_attribution_hook(tmp_path, message)
+    out = done.stdout + done.stderr
+    assert done.returncode == 1 and "AI-attribution" in out, (
+        f"the hook let an AI-attributed message through (exit {done.returncode}):\n{out}"
+    )
