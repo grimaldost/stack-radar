@@ -14,6 +14,10 @@ the field report or the gate's exit code sees.
 
 ### Fixed
 
+- **`ty` 0.0.85 passes.** `trust.scratch_dir`, a `@contextmanager` function, is annotated
+  `-> Generator[Path, None, None]` instead of `-> Iterator[Path]`, the form `ty` 0.0.85 reports
+  as a deprecated overload. The annotation is the whole change: no behaviour moves. The dev
+  dependency lock takes `ty` 0.0.85 with it.
 - **`radar field` no longer calls a `[pilot_exit]` block "retained from an earlier pilot" on an
   entry that never was a pilot.** The schema allows the block at `ring = "own"` (authorship is
   not an exemption from evidence), and the report's finding and Markdown section described it
