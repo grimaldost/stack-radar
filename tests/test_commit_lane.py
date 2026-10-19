@@ -53,6 +53,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+import yaml
 
 # The checkout under test: this one, or the one whose `src/` `RADAR_ENGINE_SRC` names, which
 # is how CONTRIBUTING's red-proof procedure points the suite at an earlier commit.
@@ -356,20 +357,43 @@ def test_a_built_project_still_runs_the_build_backend_pyproject_names(tmp_path: 
 ATTRIBUTION_HOOK = "no-ai-attribution"
 
 
+def attribution_only_config() -> str:
+    """The real config cut down to the repository entry that holds `no-ai-attribution`.
+
+    The other entries (ruff, `conventional-pre-commit`) are not under test, and
+    `pre-commit run` clones every remote repository in the config it is given, so the full
+    file would make each test fetch `conventional-pre-commit` from github.com and fail
+    offline, as the rest of this module's tests do not. The local entry needs no clone.
+    The entry is read from the real file, so the hook under test is the one that ships.
+    """
+    declared = yaml.safe_load((REPO / CONFIG).read_text(encoding="utf-8"))
+    kept = [
+        entry
+        for entry in declared["repos"]
+        if entry.get("repo") == "local"
+        and any(hook.get("id") == ATTRIBUTION_HOOK for hook in entry.get("hooks", []))
+    ]
+    if not kept:
+        pytest.fail(f"{CONFIG} declares no local `{ATTRIBUTION_HOOK}` hook to run")
+    return yaml.safe_dump({"repos": kept})
+
+
 def run_attribution_hook(tmp_path: Path, message: str) -> subprocess.CompletedProcess[str]:
     """Run the `no-ai-attribution` hook on `message` as git does at `commit-msg`.
 
     Through `pre-commit run --hook-stage commit-msg`, so the hook's id, its stage and its
-    entry are all exercised. The config is copied into a scratch repository and staged
-    there: pre-commit refuses a config with unstaged changes, which would fail these tests
-    in the middle of an edit to the very file they judge, and the scratch repository gives
-    it a cache of its own, so nothing is written to the machine's `~/.cache/pre-commit`.
+    entry are all exercised. The config is a scratch copy holding only the local hook (see
+    `attribution_only_config`), staged in a scratch repository: pre-commit refuses a config
+    with unstaged changes, which would fail these tests in the middle of an edit to the
+    very file they judge, and the scratch repository gives it a cache of its own, so
+    nothing is written to the machine's `~/.cache/pre-commit`. Nothing here reaches the
+    network.
     """
     repo = tmp_path / "repo"
     repo.mkdir()
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["PRE_COMMIT_HOME"] = str(tmp_path / "pre-commit-home")
-    shutil.copy(REPO / CONFIG, repo / CONFIG)
+    (repo / CONFIG).write_text(attribution_only_config(), encoding="utf-8")
     subprocess.run(  # noqa: S603, S607 - fixed argv, no shell
         ["git", "init", "-q"], cwd=repo, env=env, check=True, capture_output=True
     )
