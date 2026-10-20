@@ -1228,6 +1228,90 @@ class TestScriptIdentity:
         doc = radar.report("ruff", *WINDOW)
         assert doc["metrics"]["invocations"] == 1
 
+    @pytest.mark.parametrize(
+        ("glob", "command"),
+        [
+            ("runner", "bash /opt/tools/runner -- uv run pytest -q"),
+            ("deploy.sh", "sh scripts/deploy.sh"),
+            ("runner", "bash -o pipefail -x runner"),
+            ("runner", '"C:/Program Files/Git/bin/bash.exe" runner'),
+            ("runner", "sudo bash runner"),
+            ("runner", "bash --norc --noprofile runner"),
+            ("runner", "bash --rcfile init.sh runner"),
+            ("runner", "bash -- runner"),
+        ],
+    )
+    def test_a_script_run_through_a_shell_counts(self, radar, glob, command):
+        radar.tool("widget", cli_entry("widget", f'"{glob}"'))
+        radar.session(
+            "s1",
+            [bash("t1", "2026-08-05T10:00:00.000Z", command)],
+            mtime=epoch("2026-08-05"),
+        )
+        doc = radar.report("widget", *WINDOW)
+        assert doc["metrics"]["invocations"] == 1
+        assert doc["metrics"]["per_tool"][0]["tool"] == f"cmd:{glob}"
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "cat runner",
+            "git add runner",
+            "chmod +x runner",
+            "echo bash runner",
+            'bash -c "runner"',
+            'bash -lc "runner --x"',
+            "bash -s < runner",
+            "bash",
+        ],
+    )
+    def test_a_shell_script_named_as_an_argument_does_not_count(self, radar, command):
+        # Naming the file is not running it, and a shell whose body is a string or stdin
+        # has no script operand: the same opacity as `python -c`.
+        radar.tool("widget", cli_entry("widget", '"runner"'))
+        radar.session(
+            "s1",
+            [bash("t1", "2026-08-05T10:00:00.000Z", command)],
+            mtime=epoch("2026-08-05"),
+        )
+        doc = radar.report("widget", *WINDOW)
+        assert doc["metrics"]["invocations"] == 0
+
+    def test_the_arguments_after_a_shell_script_are_not_identities(self, radar):
+        # `-- uv run pytest` belongs to the script, not to a local invocation.
+        radar.tool("widget", cli_entry("widget", '"pytest"'))
+        radar.session(
+            "s1",
+            [bash("t1", "2026-08-05T10:00:00.000Z", "bash runner -- uv run pytest -q")],
+            mtime=epoch("2026-08-05"),
+        )
+        doc = radar.report("widget", *WINDOW)
+        assert doc["metrics"]["invocations"] == 0
+
+    def test_running_the_script_directly_and_through_a_shell_count_alike(self, radar):
+        radar.tool("widget", cli_entry("widget", '"runner"'))
+        radar.session(
+            "s1",
+            [
+                bash("t1", "2026-08-05T10:00:00.000Z", "./runner"),
+                bash("t2", "2026-08-05T10:01:00.000Z", "bash runner"),
+            ],
+            mtime=epoch("2026-08-05"),
+        )
+        doc = radar.report("widget", *WINDOW)
+        assert doc["metrics"]["invocations"] == 2
+        assert [t["tool"] for t in doc["metrics"]["per_tool"]] == ["cmd:runner"]
+
+    def test_an_executable_glob_does_not_match_a_shell_script_it_lints(self, radar):
+        radar.tool("ruff", cli_entry("ruff", '"ruff"'))
+        radar.session(
+            "s1",
+            [bash("t1", "2026-08-05T10:00:00.000Z", "bash scripts/lint.sh")],
+            mtime=epoch("2026-08-05"),
+        )
+        doc = radar.report("ruff", *WINDOW)
+        assert doc["metrics"]["invocations"] == 0
+
     def test_a_script_glob_beside_an_executable_glob_is_compared_too(self, radar):
         # A script-shaped glob is not carved out of the cross-check as incomparable. An
         # index that names the script an interpreter runs has a row for it, so an entry
