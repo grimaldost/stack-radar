@@ -1239,6 +1239,8 @@ class TestScriptIdentity:
             ("runner", "bash --norc --noprofile runner"),
             ("runner", "bash --rcfile init.sh runner"),
             ("runner", "bash -- runner"),
+            ("runner", "bash -euo pipefail runner"),
+            ("runner", "bash -xO extglob runner"),
         ],
     )
     def test_a_script_run_through_a_shell_counts(self, radar, glob, command):

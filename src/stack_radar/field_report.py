@@ -295,7 +295,8 @@ def shell_script(tokens: list[str]) -> str | None:
         elif len(t) > 1 and t[0] in "-+":
             if t[0] == "-" and ("c" in t[1:] or "s" in t[1:]):
                 return None
-            i += 1
+            # A cluster ending in `o` or `O` (`-euo pipefail`) takes the next token as its value.
+            i += 2 if t[-1] in "oO" else 1
         else:
             break
     # After `--` a redirection is still not the script.
