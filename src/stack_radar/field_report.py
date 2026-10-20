@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .bootstrap import home_dir
-from .cmdscan import resolve, tokenize
+from .cmdscan import ATTACHED_REDIRECT, REDIRECT, normalise, resolve, tokenize
 from .paths import field_dir, write_error, write_inside
 from .radar_lib import (
     NAME_RULE,
@@ -183,6 +183,10 @@ def matcher_needles(m: Matchers) -> set[str]:
     )
 
 
+# POSIX shells whose script operand is an identity. PowerShell, pwsh and cmd are out of scope.
+SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+
+
 def command_identities(cmd: str) -> list[str]:
     """Everything a command line can be identified BY: executables, plus script names.
 
@@ -220,8 +224,15 @@ def command_identities(cmd: str) -> list[str]:
     way. That is a true disagreement, correctly reported; the fix belongs in whatever
     writes that table, not in a fudge here.
 
-    A script identity always carries its `.py`, so a bare executable glob can never
-    collide with one.
+    A shell gets the same treatment: when the segment's chain ends at a POSIX shell, the
+    script operand is added by its file name (`bash /opt/tools/runner -- uv run pytest`
+    gives `runner`). `-c` and `-s` leave the body opaque, as `python -c` does, and the
+    arguments after the script belong to the script, not to this command line.
+
+    A python script identity carries its `.py`; a shell script identity is the operand's
+    base name, which for an extensionless script is the same name `./runner` already
+    resolves to. Running the script directly and running it through a shell therefore
+    count once each under the same glob.
     """
     out: list[str] = []
     for tokens in tokenize(cmd or ""):
@@ -231,16 +242,73 @@ def command_identities(cmd: str) -> list[str]:
         for n in chain:
             if n not in out:
                 out.append(n)
-        if not chain or chain[-1] != "python":
+        if not chain:
             continue
-        for t in tokens:
-            if t.startswith("-") or not t.lower().endswith(".py"):
-                continue
-            base = Path(t.replace("\\", "/")).name
-            if base and base not in out:
-                out.append(base)
-            break
+        if chain[-1] == "python":
+            for t in tokens:
+                if t.startswith("-") or not t.lower().endswith(".py"):
+                    continue
+                base = Path(t.replace("\\", "/")).name
+                if base and base not in out:
+                    out.append(base)
+                break
+        elif chain[-1].lower() in SHELLS:
+            script = shell_script(tokens)
+            if script:
+                base = Path(script.replace("\\", "/")).name
+                if base and base not in out:
+                    out.append(base)
     return out
+
+
+# Long options of a POSIX shell that take a value; every other long option is a flag.
+SHELL_VALUE_LONG = frozenset({"--rcfile", "--init-file"})
+# Short options that take a value: `-o pipefail`, `+O extglob`.
+SHELL_VALUE_SHORT = frozenset({"-o", "+o", "-O", "+O"})
+
+
+def shell_script(tokens: list[str]) -> str | None:
+    """The script operand a POSIX shell in this segment runs, or None.
+
+    None when there is no operand (an interactive shell) or when the body is opaque:
+    a short-option cluster containing `c` (the body is the next string) or `s` (the body
+    is stdin). Only the first operand counts; what follows it is the script's own
+    argument list.
+    """
+    start = next((i for i, t in enumerate(tokens) if normalise(t).lower() in SHELLS), None)
+    if start is None:
+        return None
+    i = start + 1
+    while i < len(tokens):
+        t = tokens[i]
+        if REDIRECT.match(t):
+            i += 2
+        elif ATTACHED_REDIRECT.match(t):
+            i += 1
+        elif t == "--":
+            i += 1
+            break
+        elif t.startswith("--"):
+            i += 2 if t in SHELL_VALUE_LONG else 1
+        elif t in SHELL_VALUE_SHORT:
+            i += 2
+        elif len(t) > 1 and t[0] in "-+":
+            if t[0] == "-" and ("c" in t[1:] or "s" in t[1:]):
+                return None
+            # A cluster ending in `o` or `O` (`-euo pipefail`) takes the next token as its value.
+            i += 2 if t[-1] in "oO" else 1
+        else:
+            break
+    # After `--` a redirection is still not the script.
+    while i < len(tokens):
+        t = tokens[i]
+        if REDIRECT.match(t):
+            i += 2
+        elif ATTACHED_REDIRECT.match(t):
+            i += 1
+        else:
+            return None if t == "-" else t  # a lone `-` reads the script from stdin
+    return None
 
 
 def first_match(cmd: str, globs: list[str]) -> str | None:

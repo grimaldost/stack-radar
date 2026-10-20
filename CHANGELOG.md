@@ -14,6 +14,13 @@ the field report or the gate's exit code sees.
 
 ### Added
 
+- **`radar field` identifies a script run by a POSIX shell.** A `match_command` glob now
+  matches the file name of the script operand of `bash`, `sh`, `zsh`, `dash` or `ksh`, as it
+  already did for a `.py` file run by the python interpreter: `bash /opt/tools/runner -- uv run
+  pytest` counts as `runner`, so a CLI shipped as an extensionless shell script can be measured
+  instead of declared `telemetry_absent`. Options before the script are skipped; `-c` and `-s`
+  leave the body opaque, and the arguments after the script are not read. A count can only move
+  up, and only for an entry whose glob names a script that a shell ran. (consumer-affecting)
 - **`radar economics`, a descriptive view of the token economics of the sessions in a
   window.** It reads the `message.usage` block of every assistant message in the window's
   transcripts, which no other verb read, and prints totals by class (output, thinking,

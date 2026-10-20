@@ -330,6 +330,13 @@ matched in its module spelling, so `pre-commit` matches `pre_commit`. A matcher 
 without the word appearing in the command line, so the fast byte prescan cannot be trusted
 for it.
 
+A script is also identified by its file name when the interpreter or shell is what ran it:
+`uv run python tool.py run` counts as `tool.py`, and `bash scripts/deploy.sh` or `bash
+/opt/tools/runner -- uv run pytest` as `deploy.sh` and `runner`. Only a POSIX shell
+(`bash`, `sh`, `zsh`, `dash`, `ksh`) counts, only its first script operand does, and `bash
+-c "..."` or `bash -s` leave the body opaque. `./runner` and `bash runner` count once each
+under the same `runner` glob.
+
 The `[telemetry]` key set is **closed**. A mistyped matcher name is not a TOML error; it is a
 silent zero, and a zero reads as evidence. So the gate reports an unrecognised key as a WARN
 rather than ignoring it.
@@ -369,8 +376,9 @@ cross-checked, and the profile names the directory that holds them as
   written in; the engine reads version 1, accepts the field without acting on it, and
   ignores any other key.
 
-A table that records only the interpreter for `python tool.py` reads as drift on an entry
-matched by its script name. That is a real disagreement, and the report keeps it.
+A table that records only the interpreter for `python tool.py`, or only the shell for
+`bash <script>`, reads as drift on an entry matched by its script name. That is a real
+disagreement, and the report keeps it.
 
 ## The gate
 
