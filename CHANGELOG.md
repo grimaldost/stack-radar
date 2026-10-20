@@ -12,6 +12,22 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Added
+
+- **`radar economics`, a descriptive view of the token economics of the sessions in a
+  window.** It reads the `message.usage` block of every assistant message in the window's
+  transcripts, which no other verb read, and prints totals by class (output, thinking,
+  uncached input, cache read), the main session against sidechains, the split per model
+  (attributed per message), cache creation by time to live (5 minutes, 1 hour,
+  unattributed), cache re-creation events (a turn whose cache creation exceeds half the
+  previous turn's context) with their gap to the previous turn, and per transcript the
+  turns, cold-start context, final context and growth per turn. Streamed duplicates are
+  merged by `message.id`; a field a record does not carry is counted as absent, not zero.
+  Markdown by default, one `--json` document with `schema_version` 1 otherwise. It writes
+  nothing, names no project, path or message content, and a window with no usage at all
+  prints a `[WARN]` line and exits 1. Descriptive, not causal; tokens, not prices. A new
+  module: `radar field` and its report document are unchanged.
+
 ### Fixed
 
 - **`ty` 0.0.85 passes.** `trust.scratch_dir`, a `@contextmanager` function, is annotated
