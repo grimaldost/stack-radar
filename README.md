@@ -191,6 +191,7 @@ model, including what an approval does not cover.
 | `radar render` | write the catalogue's artefacts from its entries |
 | `radar apply` | converge a machine towards what an environment declares |
 | `radar field` | field telemetry for an entry, from session transcripts |
+| `radar economics` | descriptive token economics of the sessions in a window, from transcripts |
 | `radar reconcile` | compare what is installed against what the catalogue claims |
 | `radar snapshot` | record today's upstream licence, activity and download figures |
 | `radar versions` | compare installed versions against what upstream publishes |
@@ -209,6 +210,14 @@ finds one by walking up from the working directory until it meets a `radar.toml`
 The two feedback verbs are optional. They matter only to a catalogue whose own tools
 declare a `[feedback]` block; see *The feedback registry* in
 [docs/concepts.md](docs/concepts.md).
+
+`radar economics --since YYYY-MM-DD` reads the `message.usage` block of every assistant
+message in the window's transcripts and prints where the tokens went: totals by class
+(output, thinking, uncached input, cache read), main session against sidechain, per model,
+cache creation by time to live, cache re-creation after a gap, and per transcript the
+turns, cold-start and final context and the growth per turn. It is descriptive, not causal,
+and counts tokens, not prices. It writes nothing, and names no project, path or message
+content; `--json` prints the same figures as one document.
 
 ## Continuous integration
 

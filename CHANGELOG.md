@@ -21,6 +21,19 @@ the field report or the gate's exit code sees.
   instead of declared `telemetry_absent`. Options before the script are skipped; `-c` and `-s`
   leave the body opaque, and the arguments after the script are not read. A count can only move
   up, and only for an entry whose glob names a script that a shell ran. (consumer-affecting)
+- **`radar economics`, a descriptive view of the token economics of the sessions in a
+  window.** It reads the `message.usage` block of every assistant message in the window's
+  transcripts, which no other verb read, and prints totals by class (output, thinking,
+  uncached input, cache read), the main session against sidechains, the split per model
+  (attributed per message), cache creation by time to live (5 minutes, 1 hour,
+  unattributed), cache re-creation events (a turn whose cache creation exceeds half the
+  previous turn's context) with their gap to the previous turn, and per transcript the
+  turns, cold-start context, final context and growth per turn. Streamed duplicates are
+  merged by `message.id`; a field a record does not carry is counted as absent, not zero.
+  Markdown by default, one `--json` document with `schema_version` 1 otherwise. It writes
+  nothing, names no project, path or message content, and a window with no usage at all
+  prints a `[WARN]` line and exits 1. Descriptive, not causal; tokens, not prices. A new
+  module: `radar field` and its report document are unchanged.
 
 ### Fixed
 
