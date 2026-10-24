@@ -4,10 +4,10 @@
 
 | version | supported |
 |---|---|
-| 0.2.x | yes |
+| 0.3.x | yes |
 | older | no |
 
-Fixes land in the newest 0.2.x release. There are no backports to older lines.
+Fixes land in the newest 0.3.x release. There are no backports to older lines.
 
 ## Reporting a vulnerability
 
