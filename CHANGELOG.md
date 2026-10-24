@@ -12,6 +12,18 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
+Released as a minor version rather than a patch, because it adds what a reader can see:
+`radar economics`, a new verb, and a way for `radar field` to identify a script a POSIX
+shell ran, which can move a count up. The two fixes are corrections, but the second one adds a
+`was_pilot` boolean to the field report document. Nothing is removed or renamed and the
+gate's exit code does not move, so no major version is called for, and a minor is where a
+feature arrives. One operational cost follows from choosing a minor: `radar init` writes
+`requires_framework` as the range `>=X.Y.Z,<X.(Y+1).0`, so a catalogue created by 0.2.x
+carries the ceiling `<0.3.0` and refuses this engine until its marker has that ceiling
+raised.
+
 ### Added
 
 - **`radar field` identifies a script run by a POSIX shell.** A `match_command` glob now

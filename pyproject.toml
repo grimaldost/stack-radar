@@ -1,6 +1,6 @@
 [project]
 name = "stack-radar"
-version = "0.2.1"
+version = "0.3.0"
 description = "A tech radar for a Claude Code stack: adoption state, evidence-gated ring transitions, and the gate behind them"
 requires-python = ">=3.11"
 

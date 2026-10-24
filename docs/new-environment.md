@@ -14,7 +14,7 @@ trusts.
 You need `git`, Python 3.11 or newer, [uv](https://docs.astral.sh/uv/), and the engine:
 
 ```
-uv tool install git+https://github.com/grimaldost/stack-radar@v0.2.1
+uv tool install git+https://github.com/grimaldost/stack-radar@v0.3.0
 ```
 
 Then get the catalogue onto the machine:

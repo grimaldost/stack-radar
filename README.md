@@ -65,7 +65,7 @@ Requires Python 3.11 or newer, `git` and [uv](https://docs.astral.sh/uv/). The e
 you run inside a locked-down environment needs no installation policy decision first.
 
 ```
-uv tool install git+https://github.com/grimaldost/stack-radar@v0.2.1
+uv tool install git+https://github.com/grimaldost/stack-radar@v0.3.0
 radar --version
 ```
 

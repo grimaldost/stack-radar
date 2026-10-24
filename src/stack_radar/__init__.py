@@ -15,4 +15,4 @@ from __future__ import annotations
 # copy is installed, which is the wrong question when a checkout is being judged, and
 # answers nothing at all for the fallback that runs the package straight off a PYTHONPATH
 # without installing it.
-__version__ = "0.2.1"
+__version__ = "0.3.0"
