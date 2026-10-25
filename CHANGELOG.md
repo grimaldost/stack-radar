@@ -12,6 +12,14 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Changed
+
+- **Development dependencies and the setup-uv action move to their current releases.** The
+  dev lock takes `pre-commit` 4.7.0, `ty` 0.0.91, `ruff` 0.17.2, `virtualenv` 21.14.13 and
+  `filelock` 4.2.4, and the engine's workflow pins `astral-sh/setup-uv` at v10.3.0. The
+  `ci.yml` template that `radar init` writes takes the same pin, because a test holds it equal
+  to the engine's own, so a catalogue created from now on starts on v10.3.0. No code changes.
+
 ## [0.3.0] - 2026-10-24
 
 Released as a minor version rather than a patch, because it adds what a reader can see:
