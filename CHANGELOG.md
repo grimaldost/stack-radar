@@ -14,11 +14,16 @@ the field report or the gate's exit code sees.
 
 ### Changed
 
-- **Development dependencies and the setup-uv action move to their current releases.** The
-  dev lock takes `pre-commit` 4.7.0, `ty` 0.0.91, `ruff` 0.17.2, `virtualenv` 21.14.13 and
-  `filelock` 4.2.4, and the engine's workflow pins `astral-sh/setup-uv` at v10.3.0. The
-  `ci.yml` template that `radar init` writes takes the same pin, because a test holds it equal
-  to the engine's own, so a catalogue created from now on starts on v10.3.0. No code changes.
+- **Development dependencies and the setup-uv action move to releases that follow the 7-day
+  cooldown.** The dev lock takes `pre-commit` 4.7.0, `ty` 0.0.89, `ruff` 0.17.1, `virtualenv`
+  21.14.13 and `filelock` 4.2.4, and the engine's workflow pins `astral-sh/setup-uv` at v10.3.0.
+  Each but `virtualenv` is the newest release published at least seven days before the change,
+  as `.github/dependabot.yml` requires, so `ty` and `ruff` stay behind their newest releases.
+  `virtualenv` 21.14.13 is taken inside the cooldown on purpose: it is the first release that
+  fixes GHSA-cx6f-vjhg-g3cc, an unescaped `--prompt` value in the Bash activator that affects
+  21.14.9 up to 21.14.12. The `ci.yml` template that `radar init` writes takes the same
+  setup-uv pin, because a test holds it equal to the engine's own, so a catalogue created from
+  now on starts on v10.3.0. No code changes.
 
 ## [0.3.0] - 2026-10-24
 
