@@ -39,9 +39,11 @@ as a day of zeros.
 WRITES NOTHING, and names no project, slug or path. The names it prints are skill, tool
 and MCP server names, and each one goes through the redaction `radar field` applies to
 what it writes - the home folders, then the scoped terms of the `tools.local/` entries -
-while a name a machine-local entry's matcher claims prints as that entry's `redact_as`.
-The redaction is applied before anything is counted, so the Markdown and `--json`, which
-is the document the Markdown is rendered from, name exactly the same things.
+while a name a machine-local entry's matcher claims prints as that entry's `redact_as`. A
+claim reaches the plugin prefix or MCP server the name sits under, and a plugin is one
+namespace across its skills and its MCP servers' tools (`Names` says how). The redaction
+is applied before anything is counted, so the Markdown and `--json`, which is the document
+the Markdown is rendered from, name exactly the same things.
 
 THE HONEST ZERO. An absent profile key, an absent table, an absent `derive.json`, an
 absent or unknown `discovery_format`, an absent `records_end` and a window with no rows
@@ -207,6 +209,13 @@ def _server(name: str) -> str:
 
 
 _WILDCARDS = "*?["
+_PLUGIN = "plugin_"
+
+
+def _literal_head(glob: str) -> str:
+    """The part of a glob before its first wildcard."""
+    cut = min((i for i in (glob.find(w) for w in _WILDCARDS) if i >= 0), default=len(glob))
+    return glob[:cut]
 
 
 def _claims_prefix(glob: str, prefix: str) -> bool:
@@ -222,13 +231,43 @@ def _claims_prefix(glob: str, prefix: str) -> bool:
     It errs towards claiming: a prefix wrongly claimed prints as a placeholder, a prefix
     wrongly left out prints a private name. The comparisons go through `matches`, so they
     fold case exactly where the matchers do."""
-    cut = min((i for i in (glob.find(w) for w in _WILDCARDS) if i >= 0), default=len(glob))
-    head = glob[:cut]
+    head = _literal_head(glob)
     if ":" in head:
         return matches(prefix, [head.split(":", 1)[0]])
-    if cut == len(glob):
+    if head == glob:
         return matches(prefix, [glob])
     return matches(prefix, [head + "*"])
+
+
+def _plugin_prefixes(server: str) -> list[str]:
+    """The plugin prefixes an MCP server name could belong to. Claude Code names a
+    plugin's server `plugin_<plugin>_<server>`, and either part may itself hold a `_`, so
+    every split of the rest at a `_` is a candidate, and the whole rest too: `plugin_a_b_c`
+    gives `a`, `a_b` and `a_b_c`. A server not named `plugin_...` gives none."""
+    if not matches(server[: len(_PLUGIN)], [_PLUGIN]):
+        return []
+    rest = server[len(_PLUGIN) :]
+    return [rest[:i] for i, ch in enumerate(rest) if ch == "_" and i] + ([rest] if rest else [])
+
+
+def _claims_plugin(glob: str, prefix: str) -> bool:
+    """Whether a `match` glob claims the MCP namespace of the plugin prefix `prefix`: it
+    begins `mcp__` and could match a tool of a server `plugin_<prefix>_<anything>`. Read
+    from the literal head of the glob's server part, as `_claims_prefix` reads a
+    `match_skill` glob: a literal server claims the prefixes `_plugin_prefixes` gives it,
+    and a head cut short by a wildcard claims every prefix it is compatible with
+    (`mcp__plugin_quiet*` claims every prefix beginning `quiet`, `mcp__*` all of them).
+    It errs towards claiming, for the reason `_claims_prefix` gives."""
+    if not glob.startswith("mcp__"):
+        return False
+    server = _server(glob)
+    head = _literal_head(server)
+    if head == server:
+        return any(matches(prefix, [c]) for c in _plugin_prefixes(server))
+    target = f"{_PLUGIN}{prefix}_"
+    if len(head) <= len(target):
+        return matches(target[: len(head)], [head])
+    return matches(target, [head[: len(target)]])
 
 
 class Names:
@@ -239,8 +278,11 @@ class Names:
     server - prints as that entry's `redact_as`, whole, because the rest of such a name can
     say as much as the part redaction would replace. A claim on one name reaches the
     prefix or server it sits under, since that part is printed on its own or beside other
-    names. Every other name goes through the redaction
-    `radar field` applies to what it writes: the home folders, then the scoped terms.
+    names. A plugin is one namespace across both surfaces: Claude Code names its MCP
+    servers `plugin_<prefix>_<server>`, so a claim on its prefix, through either matcher,
+    covers its skills, its group label and every tool of those servers alike. Every other
+    name goes through the redaction `radar field` applies to what it writes: the home
+    folders, then the scoped terms.
     """
 
     def __init__(self, tools: list[dict], homes: list[PurePath]) -> None:
@@ -263,28 +305,47 @@ class Names:
     def _redacted(self, text: str) -> str:
         return redact_text(redact_homes(text, self.homes), self.terms)
 
+    def _namespace(self, prefix: str) -> str | None:
+        """The placeholder of the first entry claiming the plugin namespace `prefix`: a
+        `match_skill` glob that could match a skill under it, or a `match` glob that claims
+        a tool of one of its MCP servers. None when no entry does."""
+        for placeholder, skill_globs, tool_globs in self.claims:
+            if any(_claims_prefix(g, prefix) for g in skill_globs) or any(
+                _claims_plugin(g, prefix) for g in tool_globs
+            ):
+                return placeholder
+        return None
+
     def skill(self, name: str) -> str:
-        """A skill id: claimed when a `match_skill` glob matches it, or claims its plugin
-        prefix (see `prefix`), so no part of a claimed prefix prints beside a placeholder."""
+        """A skill id: claimed when a `match_skill` glob matches it, or an entry claims its
+        plugin namespace (see `_namespace`), so no part of a claimed prefix prints beside a
+        placeholder."""
         head = name.split(":", 1)[0] if ":" in name else None
-        for placeholder, skill_globs, _ in self.claims:
+        for placeholder, skill_globs, tool_globs in self.claims:
             if matches(name, skill_globs) or (
-                head is not None and any(_claims_prefix(g, head) for g in skill_globs)
+                head is not None
+                and (
+                    any(_claims_prefix(g, head) for g in skill_globs)
+                    or any(_claims_plugin(g, head) for g in tool_globs)
+                )
             ):
                 return placeholder
         return self._redacted(name)
 
     def prefix(self, prefix: str) -> str:
-        """A plugin prefix: claimed when any `match_skill` glob could match a skill under
-        it, not only one that matches them all. A glob naming one skill claims the whole
-        prefix, the way a `match` glob naming one MCP tool claims its whole server: the
-        prefix is part of the name the entry hides."""
-        for placeholder, skill_globs, _ in self.claims:
-            if any(_claims_prefix(g, prefix) for g in skill_globs):
-                return placeholder
-        return self._redacted(prefix)
+        """A plugin prefix: claimed when any entry claims its namespace (see
+        `_namespace`), not only by a glob that matches every skill under it. A glob naming
+        one skill, or one tool of the plugin's MCP servers, claims the whole prefix, the way
+        a `match` glob naming one MCP tool claims its whole server: the prefix is part of
+        the name the entry hides."""
+        claimed = self._namespace(prefix)
+        return claimed if claimed is not None else self._redacted(prefix)
 
     def tool(self, name: str) -> str:
+        """A tool name, or an MCP server's, in two passes: an entry whose `match` glob
+        matches it, or begins `mcp__` and names a tool of its server; then, for a plugin's
+        server, an entry claiming one of the plugin prefixes it could belong to (see
+        `_plugin_prefixes` and `_namespace`)."""
         server = _server(name)
         for placeholder, _, tool_globs in self.claims:
             for glob in tool_globs:
@@ -292,6 +353,10 @@ class Names:
                     glob.startswith("mcp__") and matches(server, [_server(glob)])
                 ):
                     return placeholder
+        for candidate in _plugin_prefixes(server):
+            claimed = self._namespace(candidate)
+            if claimed is not None:
+                return claimed
         return self._redacted(name)
 
 

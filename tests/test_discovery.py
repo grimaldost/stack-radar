@@ -695,6 +695,66 @@ class TestNames:
         md = markdown(radar)
         assert "| `local-two` |  | 1 | `local-two` (1) |" in md
 
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            'match_skill = ["quiet-plugin:skill-q"]\n',
+            'match = ["mcp__plugin_quiet-plugin_srv__t1"]\n',
+        ],
+        ids=["skill-side", "tool-side"],
+    )
+    def test_a_plugin_is_one_namespace_across_skills_and_mcp_tools(self, radar, claim) -> None:
+        # Claude Code names a plugin's MCP server `plugin_<plugin>_<server>`, so the plugin
+        # prefix prints inside each of its tool names too. A claim on either side - one
+        # skill, or one tool - claims the namespace on both: no skill, group label, tool or
+        # server of the plugin prints the prefix, in any field that carries tool names,
+        # while another plugin's names print in the clear.
+        local_entry(radar, "hidden-thing", "local-two", claim)
+        quiet_tools = {
+            "mcp__plugin_quiet-plugin_srv__t1": 1,
+            "mcp__plugin_quiet-plugin_other__t2": 1,
+            "mcp__plugin_quiet-plugin_srv": 1,
+        }
+        table(
+            radar,
+            [
+                active(
+                    "s1",
+                    "2026-10-25",
+                    listing_count=1,
+                    listing_name_only=["quiet-plugin:skill-q", "plugin-a:skill-x"],
+                    deferred_delta_count=1,
+                    deferred_added_names=[*quiet_tools, "mcp__plugin_plugin-a_srv__t1"],
+                    toolsearch_calls=1,
+                    toolsearch_select=1,
+                    toolsearch_selected={**quiet_tools, "mcp__plugin_plugin-a_srv__t1": 1},
+                    toolsearch_calls_side=1,
+                    toolsearch_select_side=1,
+                    toolsearch_selected_side={**quiet_tools, "mcp__plugin_plugin-a_srv__t1": 1},
+                    skills_loaded={"quiet-plugin:skill-q": 1, "quiet-plugin:skill-r": 2},
+                )
+            ],
+        )
+        for text in self._both(radar):
+            assert "quiet" not in text, text
+            assert "plugin-a:skill-x" in text and "mcp__plugin_plugin-a_srv__t1" in text, text
+        doc = discovery(radar)
+        groups = {g["prefix"]: g["names"] for g in doc["listing"]["name_only_by_prefix"]}
+        assert groups == {
+            "local-two": [{"name": "local-two", "sessions": 1}],
+            "plugin-a": [{"name": "plugin-a:skill-x", "sessions": 1}],
+        }
+        assert doc["skills_loaded"]["most_often"] == [{"name": "local-two", "count": 3}]
+        assert doc["deferred_tools"]["announced_most_often"] == [
+            {"name": "local-two", "sessions": 1},
+            {"name": "mcp__plugin_plugin-a_srv__t1", "sessions": 1},
+        ]
+        for thread in ("main", "subagents"):
+            assert doc["toolsearch"][thread]["selected_most_often"] == [
+                {"name": "local-two", "count": 3},
+                {"name": "mcp__plugin_plugin-a_srv__t1", "count": 1},
+            ]
+
     def test_the_home_folder_in_a_name_prints_as_the_placeholder(self, radar) -> None:
         radar.user_home = radar.root
         slug = re.sub(r"[^A-Za-z0-9]", "-", str(radar.root))
