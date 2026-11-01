@@ -4,9 +4,12 @@ WHY THIS VIEW EXISTS. Every other instrument in the engine measures INVOCATION: 
 field` counts the calls that reached one entry, `radar economics` the tokens a session
 spent. None measures EXPOSURE - what a session was shown before it chose: the skill
 listing and how much of it rendered as a bare name, the deferred tools announced to it,
-the ToolSearch calls it made, the router's suggestions, the dispatch line, the skills it
-loaded. A tool nobody reaches for and a tool nobody was shown read the same in an
-invocation count; this verb is what tells them apart.
+the ToolSearch calls it made, the skills a router suggested, its dispatch lines, the skills
+it loaded. A router is any hook that injects, at prompt time, a block naming skills to load;
+a dispatch line is a line of assistant text in which the agent names the skills it chose for
+the task. Which hooks and which line prefixes count is the table writer's choice: this
+verb reads only the counts and names the table holds. A tool nobody reaches for and a tool
+nobody was shown read the same in an invocation count; this verb is what tells them apart.
 
 ITS ONE SOURCE IS A DISCOVERY TABLE, specified in docs/concepts.md ("discovery table
 format, version 1"): one row per session and UTC date, and the `derive.json` beside it, at
@@ -677,6 +680,9 @@ def render_md(doc: dict[str, Any]) -> str:
         "when an `own` entry's `[telemetry].match_skill` holds the glob `<prefix>:*`.",
         "- The window is inclusive at both ends, by the UTC date of a row. Days after the UTC "
         "date of the table's records end, and days before its first row, are unmeasured.",
+        "- A router is any hook that injects, at prompt time, a block naming skills to load; a "
+        "dispatch line is a line of assistant text in which the agent names the skills it "
+        "chose for the task. Which of them count is the table writer's choice.",
     ]
     return "\n".join(L)
 
@@ -688,8 +694,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="radar discovery",
         description="What the sessions in a window were shown and what they reached for - "
-        "the skill listing, deferred tools, ToolSearch, router suggestions, the dispatch "
-        "line, Skill loads and compactions - read from the table the profile's "
+        "the skill listing, deferred tools, ToolSearch, the skills a prompt-time hook "
+        "suggested (a router), the lines naming the skills the agent chose (dispatch "
+        "lines), Skill loads and compactions - read from the table the profile's "
         "[paths].discovery_index names, in discovery table format, version 1. Writes "
         "nothing, and names no project, slug or path.",
     )

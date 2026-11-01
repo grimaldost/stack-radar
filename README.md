@@ -222,11 +222,12 @@ content; `--json` prints the same figures as one document.
 
 `radar discovery --since YYYY-MM-DD` reports what the sessions in a window were shown and
 what they reached for: the skill listing and the entries it rendered name-only, the deferred
-tools announced, ToolSearch calls by kind, the router's suggestions and how many were
-followed by a load, the dispatch line, the skills loaded and the compactions, each as "X of
-Y" active sessions. It reads one source, a table in *discovery table format, version 1*,
-which the profile names as `[paths].discovery_index`, and checks the table's format before
-reading it. A missing key, table, `derive.json`, format or `records_end`, and a window with
+tools announced, ToolSearch calls by kind, the skills a prompt-time hook suggested (a
+router) and how many were followed by a load, the lines in which the agent named the skills
+it chose (dispatch lines), the skills loaded and the compactions, each as "X of Y" active
+sessions. It reads one source, a table in *discovery table format, version 1*, which the
+profile names as `[paths].discovery_index`, and checks the table's format before reading
+it. A missing key, table, `derive.json`, format or `records_end`, and a window with
 no rows, each print one `[WARN]` and exit 1, and days the table does not cover print as
 unmeasured rather than zero. It writes nothing, names no project, slug or path, and prints
 names through the same redaction `radar field` writes with. See *Discovery* in

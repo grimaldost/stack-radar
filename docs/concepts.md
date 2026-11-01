@@ -385,9 +385,16 @@ disagreement, and the report keeps it.
 `radar field` counts what a session used. `radar discovery --since YYYY-MM-DD` reports what
 the sessions in a window were *shown* and what they reached for: the skill listing and the
 entries it rendered as a bare name, the deferred tools announced, the ToolSearch calls, the
-router's suggestions, the dispatch line, the Skill loads and the compactions. A tool nobody
+router's suggestions, the dispatch lines, the Skill loads and the compactions. A tool nobody
 reached for and a tool nobody was shown read the same in a usage count; this is the report
 that tells them apart.
+
+Two of those terms name habits a setup may or may not have. A *router* is any hook that
+injects, at prompt time, a block naming skills to load. A *dispatch line* is a line of
+assistant text in which the agent names the skills it chose for the task. Which hooks count
+as a router and which line prefixes mark a dispatch line are the table writer's choice; the
+engine reads only the counts and names the table holds, and a setup with neither reports
+zeros there.
 
 It has one source, a table in *discovery table format, version 1* (below), and unlike the
 invocation table it is not a cross-check of a parse the engine also makes. The profile names
@@ -494,12 +501,12 @@ on the row of the suggestion or of the line.
 | `mcp_instructions_servers` | name list | `[]` | the servers that sent them |
 | `hook_success`, `hook_additional_context` | map | `{}` | hook name to count |
 | `hook_errors` | map | `{}` | `<type>:<hook name>` to count |
-| `router_injections` | count | `0` | router suggestion blocks |
-| `router_named` | map | `{}` | skill id to the times the router named it |
+| `router_injections` | count | `0` | blocks a router injected (see *Discovery* above) |
+| `router_named` | map | `{}` | skill id to the times a router block named it |
 | `router_unparsed` | count | `0` | router blocks in no format the writer parses |
 | `router_unmatched` | count | `0` | router ids not among the listing names |
 | `router_named_loaded_after` | count | `0` | named suggestions followed later in the session by a main-thread Skill load of the same id |
-| `dispatch_lines` | count | `0` | lines of assistant text that begin `Dispatch:` or `Despacho:`, in any case and optionally inside `*` or `_` emphasis |
+| `dispatch_lines` | count | `0` | dispatch lines: lines of assistant text in which the agent names the skills it chose; which line prefixes count (for example a line that begins `Dispatch:`) is the writer's choice, and the engine reads only the count |
 | `dispatch_named` | name list | `[]` | listing names on such a line |
 | `toolsearch_calls`, `toolsearch_calls_side` | count | `0` | ToolSearch calls |
 | `toolsearch_select`, `toolsearch_select_side` | count | `0` | of those, `select:` calls |

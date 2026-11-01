@@ -18,9 +18,10 @@ the field report or the gate's exit code sees.
   reached for.** Every other verb measures use; this one measures exposure: the skill listing
   and the entries it rendered name-only (grouped by plugin prefix, a prefix marked own when an
   `own` entry's `match_skill` holds `<prefix>:*`), the deferred tools announced, ToolSearch
-  calls by kind on the main thread and in subagents with the names selected, the router's
-  suggestions and how many were followed by a load, the dispatch line, the skills loaded and
-  the compactions. A session counts when its rows in the window sum to at least one user
+  calls by kind on the main thread and in subagents with the names selected, the skills a
+  prompt-time hook suggested (a router) and how many were followed by a load, the lines in
+  which the agent named the skills it chose (dispatch lines), the skills loaded and the
+  compactions. A session counts when its rows in the window sum to at least one user
   prompt and one assistant message, and every figure is written as "X of Y" with its
   denominator named. It reads one source, a table in *discovery table format, version 1*,
   which `docs/concepts.md` now specifies, at a new profile key, `[paths].discovery_index`,
