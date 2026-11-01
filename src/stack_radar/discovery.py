@@ -424,7 +424,7 @@ def analyse(rows: list[dict[str, Any]], names: Names, own: set[str]) -> dict[str
             "sessions_with_listing": having(lambda s: s["listing_count"] > 0),
             "listing_chars_max": {
                 "sessions": len(chars),
-                "median": round(statistics.median(chars), 1) if chars else None,
+                "median": round(float(statistics.median(chars)), 1) if chars else None,
                 "max": max(chars) if chars else None,
             },
             "sessions_with_name_only": having(lambda s: bool(s["listing_name_only"])),

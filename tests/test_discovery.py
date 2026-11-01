@@ -259,6 +259,14 @@ class TestAFullTable:
         assert "DESCRIPTIVE ONLY" in md
         assert "## Definitions" in md
 
+    def test_a_median_over_an_odd_count_is_a_float_with_one_decimal(self, radar) -> None:
+        # One session with a value: the median is that value, printed as a float in
+        # --json and with one decimal in the Markdown, the same as over an even count.
+        table(radar, [active("s1", "2026-10-25", listing_count=1, listing_chars_max=1000)])
+        median = discovery(radar)["listing"]["listing_chars_max"]["median"]
+        assert isinstance(median, float) and median == 1000.0
+        assert "median 1,000.0, maximum 1,000, over 1 of 1 active sessions" in markdown(radar)
+
     def test_a_most_often_list_is_the_top_ten_ties_broken_by_name(self, radar) -> None:
         loads = {f"plugin-a:skill-{i:02d}": 1 for i in range(12)}
         loads["plugin-a:skill-11"] = 2
