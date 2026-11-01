@@ -203,13 +203,40 @@ def _server(name: str) -> str:
     return name[5:].split("__", 1)[0] if name.startswith("mcp__") else name
 
 
+_WILDCARDS = "*?["
+
+
+def _claims_prefix(glob: str, prefix: str) -> bool:
+    """Whether a `match_skill` glob could match a skill id under the plugin prefix
+    `prefix`, an id `<prefix>:<rest>`. Read from the glob's literal head, the part before
+    its first wildcard:
+
+    - a head holding a `:` claims the prefix before that `:` (`quiet-plugin:skill-q`);
+    - a glob with no wildcard and no `:` claims the prefix it spells (`quiet-plugin`);
+    - otherwise a wildcard comes before any `:`, so the glob could match under every
+      prefix that begins with the head (`quiet-*:skill-q`, `quiet*`, and `*` for all).
+
+    It errs towards claiming: a prefix wrongly claimed prints as a placeholder, a prefix
+    wrongly left out prints a private name. The comparisons go through `matches`, so they
+    fold case exactly where the matchers do."""
+    cut = min((i for i in (glob.find(w) for w in _WILDCARDS) if i >= 0), default=len(glob))
+    head = glob[:cut]
+    if ":" in head:
+        return matches(prefix, [head.split(":", 1)[0]])
+    if cut == len(glob):
+        return matches(prefix, [glob])
+    return matches(prefix, [head + "*"])
+
+
 class Names:
     """How each name is printed.
 
     First the claim: a name that a machine-local entry's `[telemetry]` matcher matches -
-    `match_skill` for a skill id, `match` for a tool name or its MCP server - prints as
-    that entry's `redact_as`, whole, because the rest of such a name can say as much as
-    the part redaction would replace. Every other name goes through the redaction
+    `match_skill` for a skill id or its plugin prefix, `match` for a tool name or its MCP
+    server - prints as that entry's `redact_as`, whole, because the rest of such a name can
+    say as much as the part redaction would replace. A claim on one name reaches the
+    prefix or server it sits under, since that part is printed on its own or beside other
+    names. Every other name goes through the redaction
     `radar field` applies to what it writes: the home folders, then the scoped terms.
     """
 
@@ -234,16 +261,23 @@ class Names:
         return redact_text(redact_homes(text, self.homes), self.terms)
 
     def skill(self, name: str) -> str:
+        """A skill id: claimed when a `match_skill` glob matches it, or claims its plugin
+        prefix (see `prefix`), so no part of a claimed prefix prints beside a placeholder."""
+        head = name.split(":", 1)[0] if ":" in name else None
         for placeholder, skill_globs, _ in self.claims:
-            if matches(name, skill_globs):
+            if matches(name, skill_globs) or (
+                head is not None and any(_claims_prefix(g, head) for g in skill_globs)
+            ):
                 return placeholder
         return self._redacted(name)
 
     def prefix(self, prefix: str) -> str:
-        """A plugin prefix: claimed when a `match_skill` glob matches every skill under it,
-        which is the glob matching the literal `<prefix>:*`."""
+        """A plugin prefix: claimed when any `match_skill` glob could match a skill under
+        it, not only one that matches them all. A glob naming one skill claims the whole
+        prefix, the way a `match` glob naming one MCP tool claims its whole server: the
+        prefix is part of the name the entry hides."""
         for placeholder, skill_globs, _ in self.claims:
-            if matches(f"{prefix}:*", skill_globs):
+            if any(_claims_prefix(g, prefix) for g in skill_globs):
                 return placeholder
         return self._redacted(prefix)
 

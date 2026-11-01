@@ -413,7 +413,12 @@ Its rules:
 - **Names.** Every skill, tool and MCP server name printed goes through the redaction
   `radar field` applies to what it writes, the home folders first and then the scoped terms
   of `tools.local/`. A name that a `tools.local/` entry's `match_skill` or `match` globs match
-  prints as that entry's `redact_as`, in the Markdown and in `--json` alike.
+  prints as that entry's `redact_as`, in the Markdown and in `--json` alike. A claim reaches
+  the part of the name printed on its own: a `match_skill` glob that could match a skill
+  under a plugin prefix (one whose literal head, before its first wildcard, begins
+  `<prefix>:`, or a wildcard that comes before any `:`) claims that whole prefix, its group
+  label and every skill under it, as a `match` glob naming one MCP tool claims its whole
+  server.
 - **Coverage.** The report covers the days up to the UTC date of `records_end`. That day is
   flagged partial, and later days in the window, like days before the table's first row, are
   printed as unmeasured, never as zero. The table's age is printed from `generated_at`.

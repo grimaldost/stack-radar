@@ -643,6 +643,46 @@ class TestNames:
         # Two skills claimed by one entry are one printed name, and their loads add up.
         assert doc["skills_loaded"]["most_often"] == [{"name": "local-two", "count": 2}]
 
+    @pytest.mark.parametrize(
+        "glob",
+        [
+            "quiet-plugin:skill-q",
+            "quiet-plugin:skill-?",
+            "quiet-*:skill-q",
+            "quiet*",
+            "quiet-plugin",
+        ],
+    )
+    def test_a_narrow_skill_claim_hides_the_whole_prefix(self, radar, glob: str) -> None:
+        # The entry claims one skill (or a glob that could match one under the prefix), and
+        # neither its name nor a scoped term holds the prefix. Like a narrow `match` glob,
+        # which claims its whole MCP server, it claims the whole prefix: the group label and
+        # every name under it print as the entry's `redact_as`, never the prefix in the clear.
+        local_entry(radar, "hidden-thing", "local-two", f"match_skill = {json.dumps([glob])}\n")
+        table(
+            radar,
+            [
+                active(
+                    "s1",
+                    "2026-10-25",
+                    listing_count=1,
+                    listing_name_only=["quiet-plugin:skill-q", "plugin-a:skill-x"],
+                    skills_loaded={"quiet-plugin:skill-q": 1, "quiet-plugin:skill-r": 2},
+                )
+            ],
+        )
+        for text in self._both(radar):
+            assert "quiet" not in text, text
+        doc = discovery(radar)
+        groups = {g["prefix"]: g["names"] for g in doc["listing"]["name_only_by_prefix"]}
+        assert groups == {
+            "local-two": [{"name": "local-two", "sessions": 1}],
+            "plugin-a": [{"name": "plugin-a:skill-x", "sessions": 1}],
+        }
+        assert doc["skills_loaded"]["most_often"] == [{"name": "local-two", "count": 3}]
+        md = markdown(radar)
+        assert "| `local-two` |  | 1 | `local-two` (1) |" in md
+
     def test_the_home_folder_in_a_name_prints_as_the_placeholder(self, radar) -> None:
         radar.user_home = radar.root
         slug = re.sub(r"[^A-Za-z0-9]", "-", str(radar.root))
