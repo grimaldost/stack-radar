@@ -572,6 +572,154 @@ class TestTheFeedbackExclusion:
         assert "<claude_home>/feedback is outside the scan by declaration" in p.stdout
 
 
+class TestThePluginDataExclusion:
+    """`<claude_home>/plugins/data` is excluded as ONE DIRECTORY, never as a path component.
+
+    It is where Claude Code keeps each plugin's runtime state, and a hook's per-session file
+    can name the catalogue for an ordinary reason. The name carries the session id, so an
+    `[invariant.exempt]` row cannot reach it. The word `data` is not to be written as an
+    INVARIANT_SKIP_DIRS entry: that predicate matches a component at any depth, so it would
+    also delete every other directory of that name from the scan.
+    """
+
+    NOTE = "[NOTE] invariant: <claude_home>/plugins/data is outside the scan by declaration - "
+    NAMING = "a session worked in the mini-radar repo\n"
+
+    @staticmethod
+    def plant(root: Path, relative: str, text: str = NAMING) -> None:
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+
+    @pytest.mark.parametrize(
+        "relative",
+        [
+            "plugins/data/some-plugin/state/0a1b2c3d.json",
+            "plugins/data/some-plugin/deep/er/still/log.txt",
+            "plugins/data/notes.md",
+            "plugins/data/some-plugin/hooks/hooks.json",
+        ],
+    )
+    def test_a_state_file_does_not_fail_and_the_gate_says_why(self, radar, relative):
+        radar.tool("ruff", VALID)
+        self.plant(radar.home, relative)
+        p = radar.gate()
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert "[FAIL] invariant:" not in p.stdout
+        assert self.NOTE in p.stdout
+
+    def test_a_state_file_does_not_count_among_the_eligible_files(self, radar):
+        radar.tool("ruff", VALID)
+        self.plant(radar.home, "plugins/some-plugin/plugin.json", '{"ok": true}\n')
+        self.plant(radar.home, "plugins/data/some-plugin/state.json")
+        self.plant(radar.home, "plugins/data/some-plugin/state.md")
+        p = radar.gate()
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert "<claude_home>/plugins: 1 scanned / 1 eligible" in p.stdout
+
+    @pytest.mark.parametrize(
+        "relative",
+        [
+            "plugins/cache/x/1.0.0/data/notes.md",
+            "plugins/marketplaces/m/data/notes.md",
+            "plugins/database/notes.md",
+            "plugins/data.md",
+            "skills/data/notes.md",
+        ],
+    )
+    def test_anything_else_called_data_is_still_scanned(self, radar, relative):
+        radar.tool("ruff", VALID)
+        self.plant(radar.home, relative)
+        p = radar.gate()
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "[FAIL] invariant:" in p.stdout
+        assert Path(relative).name in p.stdout
+
+    @pytest.mark.parametrize("relative", ["data/notes.md", "plugins/data/notes.md"])
+    def test_a_data_directory_inside_a_worktree_is_still_scanned(self, radar, relative):
+        radar.tool("ruff", VALID)
+        radar.tool("widget", OWN)
+        self.plant(checkout(declare_documents(radar) / "widget"), relative)
+        p = radar.gate()
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "[FAIL] invariant:" in p.stdout
+
+    def test_a_claude_home_kept_under_such_a_path_is_still_scanned(self, radar, tmp_path):
+        # What is left out is the directory under the root, not a spelling of the path.
+        home = tmp_path / "plugins" / "data" / "home"
+        radar.tool("ruff", VALID)
+        self.plant(home, "plugins/some-plugin/notes.md")
+        p = radar.gate("--claude-home", str(home))
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "[FAIL] invariant:" in p.stdout
+
+    def test_a_declared_file_is_read_and_its_siblings_stay_out(self, radar):
+        radar.tool("ruff", VALID)
+        declared = "plugins/data/some-plugin/binding.toml"
+        write_marker(radar, claude_home_paths=(declared,))
+        self.plant(radar.home, declared)
+        self.plant(radar.home, "plugins/data/some-plugin/sibling.toml")
+        p = radar.gate()
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "binding.toml" in p.stdout
+        assert "sibling.toml" not in p.stdout
+        assert f"<claude_home>/{declared}: 1 scanned / 1 eligible" in p.stdout
+
+    def test_a_declared_directory_is_read_and_its_siblings_stay_out(self, radar):
+        radar.tool("ruff", VALID)
+        declared = "plugins/data/some-plugin"
+        write_marker(radar, claude_home_paths=(declared,))
+        self.plant(radar.home, f"{declared}/nested/binding.toml")
+        self.plant(radar.home, "plugins/data/other-plugin/sibling.toml")
+        p = radar.gate()
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "binding.toml" in p.stdout
+        assert "sibling.toml" not in p.stdout
+        assert f"<claude_home>/{declared}: 1 scanned / 1 eligible" in p.stdout
+
+    def test_declaring_the_whole_directory_reads_it(self, radar):
+        radar.tool("ruff", VALID)
+        write_marker(radar, claude_home_paths=("plugins/data",))
+        self.plant(radar.home, "plugins/data/some-plugin/binding.toml")
+        p = radar.gate()
+        assert p.returncode == 1, p.stdout + p.stderr
+        assert "binding.toml" in p.stdout
+
+    def test_declaring_the_home_itself_does_not_bring_it_back(self, radar):
+        # `.` names nothing under the directory, so the omission still holds in that walk.
+        radar.tool("ruff", VALID)
+        write_marker(radar, claude_home_paths=(".",))
+        self.plant(radar.home, "plugins/data/some-plugin/state.json")
+        p = radar.gate()
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert "[FAIL] invariant:" not in p.stdout
+
+    def test_fast_leaves_it_out_and_says_why(self, radar):
+        radar.tool("ruff", VALID)
+        self.plant(radar.home, "plugins/data/some-plugin/state.json")
+        p = radar.gate("--fast")
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert self.NOTE in p.stdout
+        assert "<claude_home>/plugins: 0 scanned / 0 eligible" in p.stdout
+
+    def test_no_data_plane_prints_no_note(self, radar):
+        # No scan ran, so there is nothing for an omission to be outside of.
+        radar.tool("ruff", VALID)
+        self.plant(radar.home, "plugins/data/some-plugin/state.json")
+        p = radar.gate("--no-data-plane")
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert self.NOTE not in p.stdout
+
+    def test_the_reason_is_ascii(self, radar):
+        radar.tool("ruff", VALID)
+        (radar.home / "plugins").mkdir()
+        p = radar.gate()
+        assert self.NOTE in p.stdout
+        line = next(ln for ln in p.stdout.splitlines() if ln.startswith(self.NOTE))
+        assert line.isascii(), line
+        assert len(line) > len(self.NOTE), line
+
+
 class TestTheCeiling:
     """The file cap is `--fast`, not the default, and it has to admit when it cut.
 
