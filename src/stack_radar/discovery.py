@@ -317,19 +317,17 @@ class Names:
         return None
 
     def skill(self, name: str) -> str:
-        """A skill id: claimed when a `match_skill` glob matches it, or an entry claims its
+        """A skill id, in two passes: the entry whose `match_skill` glob matches it first,
+        so each skill counts under the entry that names it; then an entry claiming its
         plugin namespace (see `_namespace`), so no part of a claimed prefix prints beside a
         placeholder."""
-        head = name.split(":", 1)[0] if ":" in name else None
-        for placeholder, skill_globs, tool_globs in self.claims:
-            if matches(name, skill_globs) or (
-                head is not None
-                and (
-                    any(_claims_prefix(g, head) for g in skill_globs)
-                    or any(_claims_plugin(g, head) for g in tool_globs)
-                )
-            ):
+        for placeholder, skill_globs, _ in self.claims:
+            if matches(name, skill_globs):
                 return placeholder
+        if ":" in name:
+            claimed = self._namespace(name.split(":", 1)[0])
+            if claimed is not None:
+                return claimed
         return self._redacted(name)
 
     def prefix(self, prefix: str) -> str:

@@ -755,6 +755,43 @@ class TestNames:
                 {"name": "mcp__plugin_plugin-a_srv__t1", "count": 1},
             ]
 
+    def test_a_skill_prints_as_the_entry_that_names_it_before_a_prefix_claim(self, radar) -> None:
+        # Two entries claim different skills under one prefix. Each skill prints as the
+        # entry whose glob matches it exactly, so its loads add up under its own
+        # placeholder; the prefix claim only decides a skill neither names.
+        local_entry(radar, "entry-a", "local-a", 'match_skill = ["quiet-plugin:skill-q"]\n')
+        local_entry(radar, "entry-b", "local-b", 'match_skill = ["quiet-plugin:skill-r"]\n')
+        table(
+            radar,
+            [
+                active(
+                    "s1",
+                    "2026-10-25",
+                    listing_count=1,
+                    listing_name_only=["quiet-plugin:skill-q", "quiet-plugin:skill-r"],
+                    skills_loaded={
+                        "quiet-plugin:skill-q": 1,
+                        "quiet-plugin:skill-r": 2,
+                        "quiet-plugin:skill-s": 4,
+                    },
+                )
+            ],
+        )
+        for text in self._both(radar):
+            assert "quiet" not in text, text
+        doc = discovery(radar)
+        [group] = doc["listing"]["name_only_by_prefix"]
+        assert group["prefix"] in {"local-a", "local-b"}
+        assert group["names"] == [
+            {"name": "local-a", "sessions": 1},
+            {"name": "local-b", "sessions": 1},
+        ]
+        # skill-s is named by neither, so the first entry claiming the prefix takes it.
+        assert doc["skills_loaded"]["most_often"] == [
+            {"name": "local-a", "count": 5},
+            {"name": "local-b", "count": 2},
+        ]
+
     def test_the_home_folder_in_a_name_prints_as_the_placeholder(self, radar) -> None:
         radar.user_home = radar.root
         slug = re.sub(r"[^A-Za-z0-9]", "-", str(radar.root))
