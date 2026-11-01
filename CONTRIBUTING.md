@@ -69,7 +69,9 @@ RADAR_TEST_SUBPROCESS=1 uv run python -m pytest -q
 
 The other jobs exercise what the suite cannot reach from inside the checkout:
 `stranger-path` builds the wheel, installs it into a clean environment and runs `radar init`,
-`radar add`, `radar gate` and `radar render` in a directory that never held a catalogue;
+`radar add`, `radar gate` and `radar render` in a directory that never held a catalogue,
+and `radar discovery --help`, which imports that verb and what it reads with from the wheel
+alone;
 `no-root` checks that `radar gate` outside any catalogue exits 2 and names `radar.toml`; and
 `zizmor` audits this repository's workflows and the ones `radar init` writes.
 
