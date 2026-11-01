@@ -12,6 +12,11 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Changed
+
+- The development lock takes ty 0.0.90, and the `setup-uv` pin moves from v10.3.0 to v10.3.1 in
+  CI and in the workflow `radar init` writes.
+
 ## [0.4.1] - 2026-11-01
 
 Released as a patch rather than a minor version, because it adds nothing a reader has to learn:
