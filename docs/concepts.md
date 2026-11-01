@@ -433,10 +433,11 @@ An input format, not a particular program: the engine reads whatever writes thes
 Two files sit in one directory:
 
 - `discovery.jsonl`, the table, which `[paths].discovery_index` names. One JSON object per
-  line, one row per session and UTC date on which the session has at least one record, in
-  its main transcript or in a subagent's. A record a resumed or forked session replays from
-  an earlier one is counted once, on its first copy. A record with no timestamp is counted
-  on the session's earliest row and never dated.
+  line, one row per session and UTC date on which the session has at least one first-seen
+  record (a record not already counted from an earlier transcript), in its main transcript
+  or in a subagent's. A record a resumed or forked session replays from an earlier one is
+  counted once, on its first copy, so a day holding only replayed records has no row. A
+  record with no timestamp is counted on the session's earliest row and never dated.
 - `derive.json`, beside it, a JSON object with three keys the engine reads, at its top level:
   - `discovery_format` — `"discovery-table/1"`. The engine checks it before it reads a row,
     and reads no table that names another version or none. The `format` key names the
@@ -448,8 +449,9 @@ Two files sit in one directory:
   Any other key is ignored.
 
 **Threads.** A field with a `_side` suffix counts subagent transcripts. A field without one
-counts the main thread only, except four that count both: `first_timestamp`,
-`last_timestamp`, `untimed_records` and `discovery_skipped`.
+counts the main thread only, with five exceptions: `listing_side_count` counts subagent
+transcripts only, and four count both: `first_timestamp`, `last_timestamp`,
+`untimed_records` and `discovery_skipped`.
 
 **Types and empty values.** Every count is an integer, `0` when the row has no such event.
 Every name list is a sorted array of strings, `[]` when there is none.
