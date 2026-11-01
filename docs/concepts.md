@@ -469,8 +469,9 @@ transcripts only, and four count both: `first_timestamp`, `last_timestamp`,
 **Types and empty values.** Every count is an integer, `0` when the row has no such event.
 Every name list is a sorted array of strings, `[]` when there is none.
 Every map is an object of string to integer, `{}` when there is none.
-`listing_skill_count_max` and `listing_chars_max` are integers, `null` when the row has no
-listing. Timestamps are ISO 8601 strings in UTC, and every row has both `first_timestamp`
+`listing_skill_count_max` and `listing_chars_max` are integers, `null` when no listing of the row
+carried a valid value (a row whose listings all had values of the wrong type is `null` too).
+Timestamps are ISO 8601 strings in UTC, and every row has both `first_timestamp`
 and `last_timestamp`.
 
 **Names, never text.** A row carries counts, lengths, flags, timestamps and names. A name is
@@ -509,9 +510,9 @@ on the row of the suggestion or of the line.
 | `hook_errors` | map | `{}` | `<type>:<hook name>` to count |
 | `router_injections` | count | `0` | blocks a router injected (see *Discovery* above) |
 | `router_named` | map | `{}` | skill id to the times a router block named it |
-| `router_unparsed` | count | `0` | router blocks in no format the writer parses |
-| `router_unmatched` | count | `0` | router ids not among the listing names |
-| `router_named_loaded_after` | count | `0` | named suggestions followed later in the session by a main-thread Skill load of the same id |
+| `router_unparsed` | count | `0` | router blocks from which the writer took no id |
+| `router_unmatched` | count | `0` | ids the router block named that the session's listing did not show |
+| `router_named_loaded_after` | count | `0` | named suggestions followed, at the same instant or later (at or after the suggestion) in the session, by a main-thread Skill load of the same id |
 | `dispatch_lines` | count | `0` | dispatch lines: lines of assistant text in which the agent names the skills it chose; which line prefixes count (for example a line that begins `Dispatch:`) is the writer's choice, and the engine reads only the count |
 | `dispatch_named` | name list | `[]` | listing names on such a line |
 | `toolsearch_calls`, `toolsearch_calls_side` | count | `0` | ToolSearch calls |
@@ -524,7 +525,7 @@ on the row of the suggestion or of the line.
 | `compact_boundaries` | count | `0` | compactions |
 | `compact_boundary_at` | array of timestamps | `[]` | their UTC times, sorted |
 | `attachment_types` | map | `{}` | attachment type to count |
-| `discovery_skipped` | count | `0` | records skipped for a field of the wrong type, both threads |
+| `discovery_skipped` | count | `0` | records skipped for a field of the wrong type, both threads; a record counts once however many of its fields are wrong |
 
 `radar discovery` reads `session_id`, `date`, `listing_chars_max`, the name lists
 `listing_name_only` and `deferred_added_names`, the maps `router_named`,

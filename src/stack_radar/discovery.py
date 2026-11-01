@@ -277,7 +277,7 @@ class Names:
     `match_skill` for a skill id or its plugin prefix, `match` for a tool name or its MCP
     server - prints as that entry's `redact_as`, whole, because the rest of such a name can
     say as much as the part redaction would replace. A claim on one name reaches the
-    prefix or server it sits under, since that part is printed on its own or beside other
+    prefix or server it sits under (a `match` glob must begin `mcp__` to claim a server), since that part is printed on its own or beside other
     names. A plugin is one namespace across both surfaces: Claude Code names its MCP
     servers `plugin_<prefix>_<server>`, so a claim on its prefix, through either matcher,
     covers its skills, its group label and every tool of those servers alike. Every other
@@ -334,7 +334,7 @@ class Names:
         """A plugin prefix: claimed when any entry claims its namespace (see
         `_namespace`), not only by a glob that matches every skill under it. A glob naming
         one skill, or one tool of the plugin's MCP servers, claims the whole prefix, the way
-        a `match` glob naming one MCP tool claims its whole server: the prefix is part of
+        a `match` glob that begins `mcp__` and names one tool claims its whole server: the prefix is part of
         the name the entry hides."""
         claimed = self._namespace(prefix)
         return claimed if claimed is not None else self._redacted(prefix)
