@@ -12,6 +12,8 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
 ### Added
 
 - **`radar discovery`, a report of what the sessions in a window were shown and what they
