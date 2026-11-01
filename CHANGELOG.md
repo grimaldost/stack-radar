@@ -12,6 +12,17 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The invariant scan of `radar gate` leaves `<claude_home>/plugins/data` out.** It is the
+  directory Claude Code gives each plugin for its runtime state, and a hook's per-session file
+  there can name the catalogue for an ordinary reason. Such a file failed the gate on every new
+  session, and its name carries the session id, so an `[invariant.exempt]` row could not name it.
+  The directory is now a declared omission, printed with its reason on every run that scans, and
+  its files no longer count among the eligible files of the `plugins` root. Only that directory
+  is out: a directory named `data` anywhere else is still read, and so is a path under it declared
+  in `[invariant].claude_home_paths`. (consumer-affecting)
+
 ## [0.4.0] - 2026-11-01
 
 ### Added

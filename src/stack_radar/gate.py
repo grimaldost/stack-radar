@@ -83,8 +83,8 @@ from .trust import git
 # `.gitignore`. The predicate below matches a path COMPONENT at any depth, so an entry here
 # deletes every directory of that name in every root it is applied to. `feedback` is
 # deliberately NOT in this set for exactly that reason: it would take a governed
-# worktree's own `docs/feedback/` with it. It is excluded as one named root instead - see
-# CLAUDE_HOME_OMITTED.
+# worktree's own `docs/feedback/` with it. It is excluded as one named root instead, and
+# `data` as one named directory, for the same reason - see CLAUDE_HOME_OMITTED.
 INVARIANT_SKIP_DIRS = {
     ".git",
     ".venv",
@@ -136,7 +136,8 @@ EXECUTION_FILE_SUFFIX = "hooks/hooks.json"
 # `radar.toml [invariant].claude_home_paths` (`declared_claude_home_paths()`), so beyond
 # the generic entries the engine names only the file its own verb writes. A path, declared
 # either way, that does not exist yet is skipped in silence: declaring it before it exists
-# is what makes the scan reach it on the day it lands.
+# is what makes the scan reach it on the day it lands. An entry that is a directory is
+# walked, apart from INVARIANT_SKIP_DIRS and PLUGIN_DATA.
 CLAUDE_HOME_SUBPATHS = (
     "settings.json",
     "CLAUDE.md",
@@ -145,9 +146,15 @@ CLAUDE_HOME_SUBPATHS = (
     "feedback-targets.toml",
 )
 
-# What the allow-list leaves out ON PURPOSE, with its reason, printed on every run. Same
-# device as `[invariant].exempt` in the marker, and for the same reason: a declared
-# omission keeps arguing for itself, while a name that is simply absent from a tuple is
+# The one directory inside an allow-listed root that the walk leaves out. It is relative
+# to `<claude_home>`, like the entries above, and a path at or under it that a catalogue
+# declares is its own root and is read: declaring it is how a catalogue says that file is
+# a binding.
+PLUGIN_DATA = "plugins/data"
+
+# What the scan leaves out ON PURPOSE, with its reason, printed on every run. Same device
+# as `[invariant].exempt` in the marker, and for the same reason: a declared omission
+# keeps arguing for itself, while a name that is simply absent from a tuple is
 # indistinguishable from an oversight.
 #
 # ASCII only, like every other printed string here: a Windows console may still use a
@@ -163,6 +170,15 @@ CLAUDE_HOME_OMITTED = {
         "matches at any depth and would drop a governed worktree's own `docs/feedback/` "
         "from a scan that promises complete coverage."
     ),
+    PLUGIN_DATA: (
+        "the directory Claude Code gives each installed plugin for its runtime state - the "
+        "per-session state and logs its hooks keep there are a LOG of what a session did, "
+        "the same kind of thing as the transcripts and the feedback inbox, and a per-session "
+        "file is named by its session id, so no exemption could name it. "
+        "Excluded as this one directory and not as a path component: the component "
+        "predicate matches at any depth and would drop every other directory called "
+        "`data`. A path under it declared in [invariant].claude_home_paths is still read."
+    ),
 }
 
 
@@ -177,6 +193,7 @@ class Root(NamedTuple):
     path: Path
     origin: str  # what declared it, for the per-root line: a tool name, or the marker
     kind: str  # "file" (read whole) | "dir" (walked) | "worktree" (git ls-files)
+    omit: Path | None = None  # a directory the walk of this root leaves out
 
 
 # KNOWN EXEMPTIONS live in the marker, not here: `radar.toml [invariant.exempt]`, read by
@@ -437,19 +454,27 @@ def data_plane_roots(
     roots: list[Root] = []
     seen: set[str] = set()
 
-    def add(path: Path, origin: str, kind: str) -> None:
+    def add(path: Path, origin: str, kind: str, omit: Path | None = None) -> None:
         # Two profiles can name the same literal directory, and an entry can repeat one.
         # normcase, not lower(): case folding is right on Windows and wrong on POSIX.
         key = os.path.normcase(str(path.resolve()))
         if key not in seen:
             seen.add(key)
-            roots.append(Root(path, origin, kind))
+            roots.append(Root(path, origin, kind, omit))
 
     for base in claude_homes(claude_home):
         for sub in subpaths:
             p = base / sub
             if p.exists():
-                add(p, f"<claude_home>/{sub}", "file" if p.is_file() else "dir")
+                # Only a root above PLUGIN_DATA leaves it out. A root at or under it was
+                # declared by name, and is read.
+                omit = base / PLUGIN_DATA
+                add(
+                    p,
+                    f"<claude_home>/{sub}",
+                    "file" if p.is_file() else "dir",
+                    omit if p in omit.parents else None,
+                )
 
     unresolved: list[str] = []
     for t in tools:
@@ -620,12 +645,15 @@ def git_ls_files(root: Path, *, inside_ok: bool = False) -> list[Path] | None:
     return [root / n for n in out.stdout.split(chr(0)) if n]
 
 
-def walk_files(root: Path) -> list[Path]:
+def walk_files(root: Path, omit: Path | None = None) -> list[Path]:
     """Every file under a `<claude_home>` root. These are not checkouts: there is no git
-    to ask, so the directory is walked and INVARIANT_SKIP_DIRS carries the exclusions."""
+    to ask, so the directory is walked, and INVARIANT_SKIP_DIRS and `omit`, one directory
+    named by its whole path, carry the exclusions."""
     files: list[Path] = []
     for p in root.rglob("*"):
         if any(part in INVARIANT_SKIP_DIRS for part in p.parts):
+            continue
+        if omit is not None and omit in p.parents:
             continue
         if p.is_file():
             files.append(p)
@@ -718,7 +746,7 @@ def check_invariant(
                 continue
             candidates = found
         elif root.kind == "dir":
-            candidates = walk_files(root.path)
+            candidates = walk_files(root.path, root.omit)
         else:
             # A file sub-path was named one by one, so it is eligible whatever it is
             # called: the allow-list already decided it belongs in the scan.

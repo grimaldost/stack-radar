@@ -616,7 +616,11 @@ What it reads:
 Directories are walked for text files (`.md`, `.toml`, `.json`, `.py`, `.js`, `.ts`, `.sh`,
 `.ps1`, `.txt`, `.yaml`, `.yml`), skipping `.git`, `.venv`, `node_modules`, `__pycache__`
 and Claude Code's own log directories. The feedback inbox under `claude_home` is left out by
-declaration, and the gate prints why on every run.
+declaration, and so is `plugins/data`, the directory where Claude Code keeps each plugin's
+runtime state: what its hooks record per session, which is logs rather than bindings.
+The gate prints why for each on every run. Only that one directory is out, so a directory named
+`data` anywhere else is still scanned, and a path under `plugins/data` declared in
+`claude_home_paths` is still read.
 
 What it looks for:
 
