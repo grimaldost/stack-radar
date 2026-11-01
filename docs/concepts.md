@@ -512,7 +512,7 @@ on the row of the suggestion or of the line.
 | `router_named` | map | `{}` | skill id to the times a router block named it |
 | `router_unparsed` | count | `0` | router blocks from which the writer took no id |
 | `router_unmatched` | count | `0` | ids the router block named that the session's listing did not show |
-| `router_named_loaded_after` | count | `0` | named suggestions followed, at the same instant or later (at or after the suggestion) in the session, by a main-thread Skill load of the same id |
+| `router_named_loaded_after` | count | `0` | named suggestions followed, at or after the suggestion in the session, by a main-thread Skill load of the same id |
 | `dispatch_lines` | count | `0` | dispatch lines: lines of assistant text in which the agent names the skills it chose; which line prefixes count (for example a line that begins `Dispatch:`) is the writer's choice, and the engine reads only the count |
 | `dispatch_named` | name list | `[]` | listing names on such a line |
 | `toolsearch_calls`, `toolsearch_calls_side` | count | `0` | ToolSearch calls |

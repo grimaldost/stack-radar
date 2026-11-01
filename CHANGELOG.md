@@ -32,7 +32,8 @@ the field report or the gate's exit code sees.
   default, one `--json` document with `schema_version` 1 otherwise. It writes nothing, names
   no project, slug or path, and prints every name through the redaction `radar field` writes
   with, a name a `tools.local/` entry's matcher claims printed as its `redact_as`; a claim on
-  one skill or one MCP tool covers its whole plugin prefix or server, and a plugin is one
+  one skill, or a `match` glob that begins `mcp__` and names one tool, covers its whole
+  plugin prefix or server, and a plugin is one
   namespace across its skills and the tools of its MCP servers (named
   `plugin_<prefix>_<server>`), so a claim on either side hides both. Released as
   part of a minor version and not a patch, because it adds a verb and a profile key a reader
