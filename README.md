@@ -192,6 +192,7 @@ model, including what an approval does not cover.
 | `radar apply` | converge a machine towards what an environment declares |
 | `radar field` | field telemetry for an entry, from session transcripts |
 | `radar economics` | descriptive token economics of the sessions in a window, from transcripts |
+| `radar discovery` | what the sessions in a window were shown and reached for, from a discovery table |
 | `radar reconcile` | compare what is installed against what the catalogue claims |
 | `radar snapshot` | record today's upstream licence, activity and download figures |
 | `radar versions` | compare installed versions against what upstream publishes |
@@ -218,6 +219,18 @@ cache creation by time to live, cache re-creation after a gap, and per transcrip
 turns, cold-start and final context and the growth per turn. It is descriptive, not causal,
 and counts tokens, not prices. It writes nothing, and names no project, path or message
 content; `--json` prints the same figures as one document.
+
+`radar discovery --since YYYY-MM-DD` reports what the sessions in a window were shown and
+what they reached for: the skill listing and the entries it rendered name-only, the deferred
+tools announced, ToolSearch calls by kind, the router's suggestions and how many were
+followed by a load, the dispatch line, the skills loaded and the compactions, each as "X of
+Y" active sessions. It reads one source, a table in *discovery table format, version 1*,
+which the profile names as `[paths].discovery_index`, and checks the table's format before
+reading it. A missing key, table, `derive.json`, format or `records_end`, and a window with
+no rows, each print one `[WARN]` and exit 1, and days the table does not cover print as
+unmeasured rather than zero. It writes nothing, names no project, slug or path, and prints
+names through the same redaction `radar field` writes with. See *Discovery* in
+[docs/concepts.md](docs/concepts.md) for the rules and the format.
 
 ## Continuous integration
 

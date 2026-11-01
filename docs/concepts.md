@@ -380,6 +380,138 @@ A table that records only the interpreter for `python tool.py`, or only the shel
 `bash <script>`, reads as drift on an entry matched by its script name. That is a real
 disagreement, and the report keeps it.
 
+## Discovery — what the sessions were shown
+
+`radar field` counts what a session used. `radar discovery --since YYYY-MM-DD` reports what
+the sessions in a window were *shown* and what they reached for: the skill listing and the
+entries it rendered as a bare name, the deferred tools announced, the ToolSearch calls, the
+router's suggestions, the dispatch line, the Skill loads and the compactions. A tool nobody
+reached for and a tool nobody was shown read the same in a usage count; this is the report
+that tells them apart.
+
+It has one source, a table in *discovery table format, version 1* (below), and unlike the
+invocation table it is not a cross-check of a parse the engine also makes. The profile names
+the table file as `[paths].discovery_index`, and the `derive.json` beside it is read too.
+`--env` falls back to `radar.toml`'s `default_environment`, like `radar field`. `--until`
+is inclusive and defaults to today in UTC. Markdown goes to stdout, and `--json` prints the
+same figures as one document with `schema_version` 1. It writes nothing and names no
+project, slug or path.
+
+Its rules:
+
+- **Active sessions.** A session is active in the window when its rows there sum to at least
+  one user prompt and one assistant message. Every figure counts active sessions only and is
+  written as "X of Y active sessions"; the first figure, the active sessions themselves, is
+  counted against every session with a row in the window.
+- **Per session, then over sessions.** A session's value is the sum of its rows in the
+  window, or their maximum for `listing_chars_max`, and a median is over sessions, with a
+  null value left out. A "most often" list is the top 10, ties broken by name: a name-list
+  field counts the distinct sessions holding a name, a map field the sum of its counts.
+- **Own prefixes.** The name-only entries are grouped by the plugin prefix before their `:`,
+  and a prefix is marked own when an entry at `ring = "own"` has the glob `<prefix>:*` in its
+  `[telemetry].match_skill`.
+- **Names.** Every skill, tool and MCP server name printed goes through the redaction
+  `radar field` applies to what it writes, the home folders first and then the scoped terms
+  of `tools.local/`. A name that a `tools.local/` entry's `match_skill` or `match` globs match
+  prints as that entry's `redact_as`, in the Markdown and in `--json` alike.
+- **Coverage.** The report covers the days up to the UTC date of `records_end`. That day is
+  flagged partial, and later days in the window, like days before the table's first row, are
+  printed as unmeasured, never as zero. The table's age is printed from `generated_at`.
+- **Absences.** No `[paths].discovery_index`, no table, no `derive.json`, a missing or
+  unknown `discovery_format`, a missing `records_end` and a window with no rows each print
+  one `[WARN]` line naming which, and exit 1. A line that is not a row in the format's shape
+  is skipped, counted and warned about in the report.
+
+### Discovery table format, version 1
+
+An input format, not a particular program: the engine reads whatever writes these files.
+Two files sit in one directory:
+
+- `discovery.jsonl`, the table, which `[paths].discovery_index` names. One JSON object per
+  line, one row per session and UTC date on which the session has at least one record, in
+  its main transcript or in a subagent's. A record a resumed or forked session replays from
+  an earlier one is counted once, on its first copy. A record with no timestamp is counted
+  on the session's earliest row and never dated.
+- `derive.json`, beside it, a JSON object with three keys the engine reads, at its top level:
+  - `discovery_format` — `"discovery-table/1"`. The engine checks it before it reads a row,
+    and reads no table that names another version or none. The `format` key names the
+    invocation table and is not read for this one.
+  - `records_end` — the ISO 8601 time of the latest record the table covers. Its UTC date
+    is the table's trailing edge.
+  - `generated_at` — the ISO 8601 time the table was written, read for its age.
+
+  Any other key is ignored.
+
+**Threads.** A field with a `_side` suffix counts subagent transcripts. A field without one
+counts the main thread only, except four that count both: `first_timestamp`,
+`last_timestamp`, `untimed_records` and `discovery_skipped`.
+
+**Types and empty values.** Every count is an integer, `0` when the row has no such event.
+Every name list is a sorted array of strings, `[]` when there is none.
+Every map is an object of string to integer, `{}` when there is none.
+`listing_skill_count_max` and `listing_chars_max` are integers, `null` when the row has no
+listing. Timestamps are ISO 8601 strings in UTC, and every row has both `first_timestamp`
+and `last_timestamp`.
+
+**Names, never text.** A row carries counts, lengths, flags, timestamps and names. A name is
+kept only when the session was shown it: a skill or router id only when it is among the
+session's listing names, and a ToolSearch `select:` token only when it names a tool announced
+to the session in a deferred-tools delta. The rest are counted as unmatched and not
+stored. No listing content, hook output, assistant text, router hint text or ToolSearch
+query is stored. The listing names and the announced names a row is checked against are the
+session's union over all its records, and `router_named_loaded_after` and `dispatch_named`
+look over the whole session too, so a load or a listing on a later day counts; each is stored
+on the row of the suggestion or of the line.
+
+| field | JSON type | empty | what it holds |
+|---|---|---|---|
+| `session_id` | string | — | the session |
+| `slug` | string | — | the project folder the session is filed under; never printed |
+| `date` | string | — | the row's UTC date, `YYYY-MM-DD` |
+| `first_timestamp`, `last_timestamp` | string | — | the row's first and last record, both threads |
+| `cli_versions` | name list | `[]` | the client versions that wrote the row's records |
+| `user_prompts` | count | `0` | user records with a timestamp that are not meta records, carry non-empty text and hold no tool result |
+| `assistant_messages` | count | `0` | assistant records with a timestamp |
+| `untimed_records` | count | `0` | records with no timestamp, both threads |
+| `listing_count` | count | `0` | skill listings shown |
+| `listing_initial_count` | count | `0` | of those, initial listings |
+| `listing_skill_count_max` | integer or null | `null` | the largest skill count a listing declared |
+| `listing_chars_max` | integer or null | `null` | the length of the longest listing, in characters |
+| `listing_names` | name list | `[]` | the names the listings carried |
+| `listing_name_only` | name list | `[]` | the names whose listing entry is exactly `- <name>`, with no description |
+| `listing_side_count` | count | `0` | skill listings shown to subagents |
+| `deferred_delta_count` | count | `0` | deferred-tools deltas |
+| `deferred_added_names`, `deferred_removed_names`, `deferred_surfaced_names` | name list | `[]` | the tools those deltas announced, withdrew and surfaced |
+| `mcp_servers_pending`, `mcp_servers_failed`, `mcp_servers_needs_auth` | name list | `[]` | the MCP servers reported in each state |
+| `mcp_instructions_count` | count | `0` | MCP server instruction blocks |
+| `mcp_instructions_servers` | name list | `[]` | the servers that sent them |
+| `hook_success`, `hook_additional_context` | map | `{}` | hook name to count |
+| `hook_errors` | map | `{}` | `<type>:<hook name>` to count |
+| `router_injections` | count | `0` | router suggestion blocks |
+| `router_named` | map | `{}` | skill id to the times the router named it |
+| `router_unparsed` | count | `0` | router blocks in no format the writer parses |
+| `router_unmatched` | count | `0` | router ids not among the listing names |
+| `router_named_loaded_after` | count | `0` | named suggestions followed later in the session by a main-thread Skill load of the same id |
+| `dispatch_lines` | count | `0` | lines of assistant text that begin `Dispatch:` or `Despacho:`, in any case and optionally inside `*` or `_` emphasis |
+| `dispatch_named` | name list | `[]` | listing names on such a line |
+| `toolsearch_calls`, `toolsearch_calls_side` | count | `0` | ToolSearch calls |
+| `toolsearch_select`, `toolsearch_select_side` | count | `0` | of those, `select:` calls |
+| `toolsearch_keyword`, `toolsearch_keyword_side` | count | `0` | of those, keyword calls |
+| `toolsearch_selected`, `toolsearch_selected_side` | map | `{}` | tool name to the times a `select:` list named it, an MCP tool counted under its server |
+| `toolsearch_select_unmatched` | count | `0` | `select:` tokens naming no announced tool; main thread only, no `_side` twin |
+| `skills_loaded`, `skills_loaded_side` | map | `{}` | skill id to Skill calls, for an id among the listing names |
+| `skills_loaded_unmatched` | count | `0` | Skill calls whose id is not among them; main thread only, no `_side` twin |
+| `compact_boundaries` | count | `0` | compactions |
+| `compact_boundary_at` | array of timestamps | `[]` | their UTC times, sorted |
+| `attachment_types` | map | `{}` | attachment type to count |
+| `discovery_skipped` | count | `0` | records skipped for a field of the wrong type, both threads |
+
+`radar discovery` reads `session_id`, `date`, `listing_chars_max`, the name lists
+`listing_name_only` and `deferred_added_names`, the maps `router_named`,
+`toolsearch_selected`, `toolsearch_selected_side` and `skills_loaded`, and the counts its
+figures sum. A row that lacks one of them, or carries it as another type, is not read. The
+other fields are part of the format, and none of them is printed.
+
 ## The gate
 
 `radar gate` is what makes the rest of it more than a document. It exits 1 on any FAIL and 2
