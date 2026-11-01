@@ -252,7 +252,11 @@ class TestAFullTable:
         assert "- sessions with a deferred-tools delta: 2 of 3 active sessions" in md
         assert "| main thread | 3 | 1 | 4 | 2 of 3 active sessions |" in md
         assert "| subagents | 2 | 1 | 3 | 1 of 3 active sessions |" in md
-        assert "- injections: 3, in 2 of 3 active sessions" in md
+        router = md.split("## Router", 1)[1].split("## Dispatch line", 1)[0]
+        injection_lines = [line for line in router.splitlines() if "injection" in line]
+        assert injection_lines == [
+            "- sessions with an injection: 2 of 3 active sessions; injections: 3"
+        ]
         assert "- compactions (main thread): 3, in 2 of 3 active sessions" in md
         assert "| `plugin-a` |  | 1 | `plugin-a:skill-x` (1) |" in md
         assert "| `WebFetch` | 2 |" in md

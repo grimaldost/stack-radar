@@ -633,8 +633,8 @@ def render_md(doc: dict[str, Any]) -> str:
         "",
         "## Router",
         "",
-        f"- sessions with an injection: {_of(r['sessions_with_injection'], y)}",
-        f"- injections: {r['injections']:,}, in {_of(r['sessions_with_injection'], y)}",
+        f"- sessions with an injection: {_of(r['sessions_with_injection'], y)}; "
+        f"injections: {r['injections']:,}",
         f"- named suggestions: {_counted(r['named'], y)}",
         f"- suggestions followed by a load of the same skill: "
         f"{_counted(r['named_loaded_after'], y)}",
