@@ -149,7 +149,7 @@ def test_the_help_states_what_the_verbs_do(tmp_path: Path) -> None:
     assert "a fresh clone needs this" not in gate, gate
 
 
-@pytest.mark.parametrize("verb", ["field", "reconcile", "versions", "sync-feedback"])
+@pytest.mark.parametrize("verb", ["field", "reconcile", "versions", "sync-feedback", "discovery"])
 def test_the_env_help_names_the_marker_key_as_a_key(verb: str, tmp_path: Path) -> None:
     # `default_environment` is a top-level key of radar.toml. Written in brackets it reads
     # as a table header, and a table of that name is not what the verbs read.

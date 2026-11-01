@@ -12,6 +12,35 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Added
+
+- **`radar discovery`, a report of what the sessions in a window were shown and what they
+  reached for.** Every other verb measures use; this one measures exposure: the skill listing
+  and the entries it rendered name-only (grouped by plugin prefix, a prefix marked own when an
+  `own` entry's `match_skill` holds `<prefix>:*`), the deferred tools announced, ToolSearch
+  calls by kind on the main thread and in subagents with the names selected, the skills a
+  prompt-time hook suggested (a router) and how many were followed by a load, the lines in
+  which the agent named the skills it chose (dispatch lines), the skills loaded and the
+  compactions. A session counts when its rows in the window sum to at least one user
+  prompt and one assistant message, and every figure is written as "X of Y" with its
+  denominator named. It reads one source, a table in *discovery table format, version 1*,
+  which `docs/concepts.md` now specifies, at a new profile key, `[paths].discovery_index`,
+  and checks `derive.json`'s `discovery_format` before reading a row. A missing key, table,
+  `derive.json`, format or `records_end`, and a window with no rows, each print one `[WARN]`
+  naming which and exit 1; days after the table's records end or before its first row print
+  as unmeasured, never as zero, and the records-end day is flagged partial. Markdown by
+  default, one `--json` document with `schema_version` 1 otherwise. It writes nothing, names
+  no project, slug or path, and prints every name through the redaction `radar field` writes
+  with, a name a `tools.local/` entry's matcher claims printed as its `redact_as`; a claim on
+  one skill, or a `match` glob that begins `mcp__` and names one tool, covers its whole
+  plugin prefix or server, and a plugin is one
+  namespace across its skills and the tools of its MCP servers (named
+  `plugin_<prefix>_<server>`), so a claim on either side hides both. Released as
+  part of a minor version and not a patch, because it adds a verb and a profile key a reader
+  can see and use; nothing existing is changed or removed, so no major is called for. A new
+  module: `radar field` and its report document, the entry schema and the gate's exit code are
+  untouched, so the entry is not consumer-affecting.
+
 ### Changed
 
 - **Development dependencies and the setup-uv action move to releases that follow the 7-day
