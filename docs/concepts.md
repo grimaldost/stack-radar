@@ -421,11 +421,17 @@ Its rules:
   `radar field` applies to what it writes, the home folders first and then the scoped terms
   of `tools.local/`. A name that a `tools.local/` entry's `match_skill` or `match` globs match
   prints as that entry's `redact_as`, in the Markdown and in `--json` alike. A claim reaches
-  the part of the name printed on its own: a `match_skill` glob that could match a skill
-  under a plugin prefix (one whose literal head, before its first wildcard, begins
-  `<prefix>:`, or a wildcard that comes before any `:`) claims that whole prefix, its group
-  label and every skill under it, as a `match` glob naming one MCP tool claims its whole
-  server.
+  the part of the name printed on its own. A `match_skill` glob claims a whole plugin prefix,
+  its group label and every skill under it, read from its literal head (the part before its
+  first wildcard): a head holding a `:` claims the prefix before that `:`; a glob with no
+  wildcard and no `:` claims the prefix it spells; and a wildcard before any `:` claims every
+  prefix that begins with the head. In the same way, a `match` glob that begins `mcp__` and
+  names one tool claims its whole server; a `match` glob that does not begin `mcp__` claims
+  only the names it matches. A plugin is one namespace across its skills and its MCP tools,
+  since Claude Code names a plugin's servers `plugin_<prefix>_<server>`: a claim on the
+  prefix through either matcher hides its skills, its group label and every tool of those
+  servers. A skill prints as the entry whose `match_skill` matches it, and only failing that
+  as the first entry claiming its prefix.
 - **Coverage.** The report covers the days up to the UTC date of `records_end`. That day is
   flagged partial, and later days in the window, like days before the table's first row, are
   printed as unmeasured, never as zero. The table's age is printed from `generated_at`.
