@@ -12,6 +12,11 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-01
+
+Released as a patch rather than a minor version, because it adds nothing a reader has to learn:
+no verb, no key and no format, only one directory the gate stops reading.
+
 ### Fixed
 
 - **The invariant scan of `radar gate` leaves `<claude_home>/plugins/data` out.** It is the
