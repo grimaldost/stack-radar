@@ -169,6 +169,21 @@ jobs:
           test -s README.md
           test -s docs/radar/index.html
 
+      # The launcher imports a verb's module on dispatch, before its parser runs, so
+      # `--help` from the wheel imports `discovery` and everything it reads with. In a venv
+      # holding the wheel alone, that is the check that the verb ships and needs no package
+      # outside the standard library.
+      - name: radar discovery --help - from the wheel, in a directory that never held a catalogue
+        shell: bash
+        run: |
+          set -euo pipefail
+          outside="$RUNNER_TEMP/discovery-help"
+          mkdir -p "$outside"
+          cd "$outside"
+          output="$(radar discovery --help)"
+          echo "$output"
+          grep -q "usage: radar discovery" <<< "$output"
+
   no-root:
     # The resolver's other half: a command run where no `radar.toml` is above
     # the working directory exits distinctly rather than silently reading a wrong catalogue

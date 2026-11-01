@@ -70,6 +70,18 @@ def test_the_zizmor_job_scans_the_workflow_init_writes():
     assert re.search(rf'uvx zizmor==\S+ .*"{re.escape(rendered.group(1))}', job), job
 
 
+def test_the_stranger_path_asks_discovery_for_help_from_the_wheel():
+    # The suite imports the checkout's own src/, where a missing module or an import of a
+    # package the wheel does not declare cannot show. The stranger path's venv holds the
+    # built wheel alone, and the launcher imports a verb's module before its parser runs.
+    job = jobs().get("stranger-path")
+    assert job is not None, sorted(jobs())
+    installed = job.find('uv pip install --python "$RUNNER_TEMP/stranger-venv" dist/*.whl')
+    asked = job.find('output="$(radar discovery --help)"')
+    assert 0 <= installed < asked, job
+    assert 'grep -q "usage: radar discovery" <<< "$output"' in job, job
+
+
 def test_every_action_is_pinned_to_a_commit():
     refs = _USES.findall(WORKFLOW.read_text(encoding="utf-8"))
     assert refs, "no `uses:` line found"
