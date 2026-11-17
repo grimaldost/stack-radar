@@ -83,10 +83,31 @@ repos:
   # address (Claude, ChatGPT/GPT, Codex, Copilot, Gemini, Cursor, Devin's bot, Windsurf), and a
   # "generated with" or "created by" footer naming one. A trailer for a person who happens
   # to be called Claude passes; an indented quote of a trailer in a body passes too.
+  #
+  # It fails closed: the only outcome that passes is "grep ran and found no match". `sed` or
+  # `grep` not on PATH, a message file that cannot be read, `sed` exiting non-zero and `grep`
+  # exiting 2 or more each print their cause and refuse the commit, so a hook that could not
+  # look at the message never reads as one that looked and found nothing (a `bash` that is
+  # the WSL launcher, handed a Windows path, now refuses instead of passing). The match runs
+  # under LC_ALL=C, on bytes, because under a UTF-8 locale a footer led by a robot emoji
+  # passed on the machine this was measured on.
   - repo: local
     hooks:
       - id: no-ai-attribution
         name: no AI attribution in the commit message
-        entry: bash -c 'if sed -e "/^# -\{24\} >8 -\{24\}\$/,\$d" -e "/^#/d" "$1" | grep -Ei "^[a-z-]+-by[[:space:]]*:.*(noreply@anthropic|claude\[bot\]|claude[[:space:]]*(<|\$)|claude (code|opus|sonnet|haiku|fable|[0-9])|chatgpt|gpt-?[0-9]|codex|copilot|gemini|cursor|devin-ai|windsurf)|^([^[:alnum:][:space:]]+[[:space:]]+)?(generated|created|written|made) (with|by)[^[:alnum:]]*(claude|chatgpt|gpt|copilot|gemini|cursor|codex)"; then echo "The commit message carries an AI-attribution trailer or footer; remove the line and commit again (CONTRIBUTING.md, Commits)."; exit 1; fi' --
+        entry: |-
+          bash -c 'export LC_ALL=C
+          for tool in sed grep; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "The no-ai-attribution hook cannot run: $tool was not found on PATH, so the commit message was not checked."; exit 1; }
+          done
+          [ -r "$1" ] || { echo "The no-ai-attribution hook cannot read the commit message file $1, so the message was not checked."; exit 1; }
+          body=$(sed -e "/^# -\{24\} >8 -\{24\}\$/,\$d" -e "/^#/d" "$1") || { echo "The no-ai-attribution hook cannot run: sed failed on $1, so the commit message was not checked."; exit 1; }
+          printf "%s\n" "$body" | grep -Ei "^[a-z-]+-by[[:space:]]*:.*(noreply@anthropic|claude\[bot\]|claude[[:space:]]*(<|\$)|claude (code|opus|sonnet|haiku|fable|[0-9])|chatgpt|gpt-?[0-9]|codex|copilot|gemini|cursor|devin-ai|windsurf)|^([^[:alnum:][:space:]]+[[:space:]]+)?(generated|created|written|made) (with|by)[^[:alnum:]]*(claude|chatgpt|gpt|copilot|gemini|cursor|codex)"
+          status=$?
+          case $status in
+            0) echo "The commit message carries an AI-attribution trailer or footer; remove the line and commit again (CONTRIBUTING.md, Commits)."; exit 1 ;;
+            1) exit 0 ;;
+            *) echo "The no-ai-attribution hook cannot run: grep exited $status, so the commit message was not checked."; exit 1 ;;
+          esac' --
         language: system
         stages: [commit-msg]
