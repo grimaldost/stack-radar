@@ -138,7 +138,9 @@ refuses the common forms: a `*-by:` trailer that names a known assistant (Claude
 GPT, Codex, Copilot, Gemini, Cursor, Windsurf, or Devin's bot) or its bot address, and a
 "generated with" or "created by" footer that names one. It reads the message above git's
 scissors line and skips comment lines, so a person called Claude, an indented quote and the
-diff of `git commit -v` all pass. No CI job checks a message for this rule, and the hook
+diff of `git commit -v` all pass. It fails closed: if `sed` or `grep` is not found, the
+message file cannot be read, or either tool fails, the commit is refused with the cause
+printed, and the match runs under `LC_ALL=C` so the caller's locale does not change it. No CI job checks a message for this rule, and the hook
 does not catch every form, so review holds the rest.
 
 **Red proofs go in the body.** Every check that ships carries recorded proof that it can
