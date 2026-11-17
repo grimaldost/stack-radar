@@ -54,6 +54,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pre_commit.parse_shebang import normalize_cmd
 
 # The checkout under test: this one, or the one whose `src/` `RADAR_ENGINE_SRC` names, which
 # is how CONTRIBUTING's red-proof procedure points the suite at an earlier commit.
@@ -378,8 +379,18 @@ def attribution_only_config() -> str:
     return yaml.safe_dump({"repos": kept})
 
 
-def run_attribution_hook(tmp_path: Path, message: str) -> subprocess.CompletedProcess[str]:
+def run_attribution_hook(
+    tmp_path: Path,
+    message: str,
+    *,
+    lang: str | None = None,
+    path: str | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run the `no-ai-attribution` hook on `message` as git does at `commit-msg`.
+
+    `lang` runs the hook under that `LANG` with `LC_ALL` and `LC_CTYPE` removed, the way a
+    caller's shell sets a locale; None leaves the inherited environment alone. `path`
+    replaces `PATH` for the hook's own run (pre-commit resolves `bash` from it).
 
     Through `pre-commit run --hook-stage commit-msg`, so the hook's id, its stage and its
     entry are all exercised. The config is a scratch copy holding only the local hook (see
@@ -393,6 +404,10 @@ def run_attribution_hook(tmp_path: Path, message: str) -> subprocess.CompletedPr
     repo.mkdir()
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     env["PRE_COMMIT_HOME"] = str(tmp_path / "pre-commit-home")
+    if lang is not None:
+        env.pop("LC_ALL", None)
+        env.pop("LC_CTYPE", None)
+        env["LANG"] = lang
     (repo / CONFIG).write_text(attribution_only_config(), encoding="utf-8")
     subprocess.run(  # noqa: S603, S607 - fixed argv, no shell
         ["git", "init", "-q"], cwd=repo, env=env, check=True, capture_output=True
@@ -402,6 +417,8 @@ def run_attribution_hook(tmp_path: Path, message: str) -> subprocess.CompletedPr
     )
     msg = tmp_path / "COMMIT_EDITMSG"
     msg.write_bytes(message.encode("utf-8"))
+    if path is not None:
+        env["PATH"] = path
     return subprocess.run(  # noqa: S603 - fixed argv, no shell
         [
             sys.executable,
@@ -461,19 +478,74 @@ ATTRIBUTED_MESSAGES = {
 }
 
 
+# The hook's match must not depend on the caller's locale: under a UTF-8 locale an emoji is
+# one character, and a `[:alnum:]` that counts it as a letter let a robot-emoji footer
+# through. `None` is the inherited environment.
+LOCALES = {"inherited": None, "C.UTF-8": "C.UTF-8", "en_GB.UTF-8": "en_GB.UTF-8"}
+
+
+@pytest.mark.parametrize("lang", LOCALES.values(), ids=LOCALES.keys())
 @pytest.mark.parametrize("message", ORDINARY_MESSAGES.values(), ids=ORDINARY_MESSAGES.keys())
-def test_the_attribution_hook_accepts_an_ordinary_message(tmp_path: Path, message: str):
-    done = run_attribution_hook(tmp_path, message)
+def test_the_attribution_hook_accepts_an_ordinary_message(
+    tmp_path: Path, message: str, lang: str | None
+):
+    done = run_attribution_hook(tmp_path, message, lang=lang)
     out = done.stdout + done.stderr
     # `Passed` is asserted as well as the exit code: a hook that is missing, or skipped for
     # want of a file, must not read as a pass.
     assert done.returncode == 0 and "Passed" in out, out
 
 
+@pytest.mark.parametrize("lang", LOCALES.values(), ids=LOCALES.keys())
 @pytest.mark.parametrize("message", ATTRIBUTED_MESSAGES.values(), ids=ATTRIBUTED_MESSAGES.keys())
-def test_the_attribution_hook_rejects_an_ai_attribution(tmp_path: Path, message: str):
-    done = run_attribution_hook(tmp_path, message)
+def test_the_attribution_hook_rejects_an_ai_attribution(
+    tmp_path: Path, message: str, lang: str | None
+):
+    done = run_attribution_hook(tmp_path, message, lang=lang)
     out = done.stdout + done.stderr
     assert done.returncode == 1 and "AI-attribution" in out, (
         f"the hook let an AI-attributed message through (exit {done.returncode}):\n{out}"
+    )
+
+
+def attribution_entry() -> list[str]:
+    """The hook's `entry` as pre-commit splits it: `bash -c '<script>' --`."""
+    declared = yaml.safe_load((REPO / CONFIG).read_text(encoding="utf-8"))
+    for repo in declared["repos"]:
+        for hook in repo.get("hooks", []):
+            if hook.get("id") == ATTRIBUTION_HOOK:
+                return shlex.split(hook["entry"])
+    pytest.fail(f"{CONFIG} declares no `{ATTRIBUTION_HOOK}` hook")
+
+
+def test_the_attribution_hook_refuses_a_message_file_it_cannot_read(tmp_path: Path):
+    # The entry is called as pre-commit calls it, `shlex.split(entry) + [path]`, because
+    # pre-commit drops a message path that does not exist before the hook runs and reports
+    # the hook as skipped. `bash` is resolved the way pre-commit resolves it.
+    missing = tmp_path / "no-such-message"
+    cmd = normalize_cmd((*attribution_entry(), str(missing)))
+    done = subprocess.run(  # noqa: S603 - argv read from the tracked config, no shell
+        cmd, capture_output=True, text=True, encoding="utf-8", timeout=120
+    )
+    out = done.stdout + done.stderr
+    assert done.returncode == 1, f"an unreadable message passed (exit {done.returncode}):\n{out}"
+    assert "cannot read the commit message file" in out and str(missing) in out, out
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="needs a PATH holding only symlinks to bash and git, which Windows cannot make "
+    "without privileges",
+)
+def test_the_attribution_hook_refuses_when_sed_is_not_found(tmp_path: Path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in ("bash", "git"):
+        found = shutil.which(name)
+        assert found, f"`{name}` is not on PATH"
+        (tools / name).symlink_to(found)
+    done = run_attribution_hook(tmp_path, "fix: x\n\nAn ordinary message.\n", path=str(tools))
+    out = done.stdout + done.stderr
+    assert done.returncode == 1 and "sed was not found" in out, (
+        f"a hook that cannot run `sed` passed (exit {done.returncode}):\n{out}"
     )

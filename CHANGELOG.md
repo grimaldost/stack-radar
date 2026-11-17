@@ -20,6 +20,17 @@ the field report or the gate's exit code sees.
   hatchling 1.33.0, and the `setup-uv` pin moves to v10.3.3 in CI and in the workflow `radar init`
   writes.
 
+### Fixed
+
+- **The `no-ai-attribution` commit hook fails closed.** Its entry ran `sed ... | grep` in the
+  caller's locale and passed whenever the pipeline did not end in a match, so a footer led by a
+  robot emoji passed under a UTF-8 `LANG`, and a `sed` or `grep` that was missing, or a message
+  path `sed` could not open, passed too. The only outcome that passes is now "grep ran and found
+  no match": `sed` or `grep` not found, an unreadable message file, `sed` exiting non-zero and
+  `grep` exiting 2 or more each print their cause and refuse the commit. The match runs under
+  `LC_ALL=C`, on bytes. A `bash` that is the WSL launcher, handed a Windows path, now refuses the
+  commit instead of passing it.
+
 ## [0.4.1] - 2026-11-01
 
 Released as a patch rather than a minor version, because it adds nothing a reader has to learn:
