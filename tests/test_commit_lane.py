@@ -518,15 +518,27 @@ def attribution_entry() -> list[str]:
     pytest.fail(f"{CONFIG} declares no `{ATTRIBUTION_HOOK}` hook")
 
 
+def run_attribution_entry(
+    message_path: Path, *, path: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run the hook's entry on `message_path` the way pre-commit calls it.
+
+    `shlex.split(entry) + [path]`, with `bash` resolved as pre-commit resolves it, and no
+    other part of pre-commit in between. `path` replaces `PATH` for the entry's own run.
+    """
+    cmd = normalize_cmd((*attribution_entry(), str(message_path)))
+    env = None if path is None else {**os.environ, "PATH": path}
+    return subprocess.run(  # noqa: S603 - argv read from the tracked config, no shell
+        cmd, capture_output=True, text=True, encoding="utf-8", timeout=120, env=env
+    )
+
+
 def test_the_attribution_hook_refuses_a_message_file_it_cannot_read(tmp_path: Path):
     # The entry is called as pre-commit calls it, `shlex.split(entry) + [path]`, because
     # pre-commit drops a message path that does not exist before the hook runs and reports
     # the hook as skipped. `bash` is resolved the way pre-commit resolves it.
     missing = tmp_path / "no-such-message"
-    cmd = normalize_cmd((*attribution_entry(), str(missing)))
-    done = subprocess.run(  # noqa: S603 - argv read from the tracked config, no shell
-        cmd, capture_output=True, text=True, encoding="utf-8", timeout=120
-    )
+    done = run_attribution_entry(missing)
     out = done.stdout + done.stderr
     assert done.returncode == 1, f"an unreadable message passed (exit {done.returncode}):\n{out}"
     assert "cannot read the commit message file" in out and str(missing) in out, out
@@ -548,4 +560,50 @@ def test_the_attribution_hook_refuses_when_sed_is_not_found(tmp_path: Path):
     out = done.stdout + done.stderr
     assert done.returncode == 1 and "sed was not found" in out, (
         f"a hook that cannot run `sed` passed (exit {done.returncode}):\n{out}"
+    )
+
+
+def test_the_attribution_hook_refuses_when_sed_fails_on_a_readable_path(tmp_path: Path):
+    # A directory passes `[ -r ]` and fails in `sed`, on every OS: only the status of the
+    # `sed` command substitution stands between that failure and a commit that was never read.
+    done = run_attribution_entry(tmp_path)
+    out = done.stdout + done.stderr
+    assert done.returncode == 1 and "sed failed" in out, (
+        f"a hook whose `sed` failed passed (exit {done.returncode}):\n{out}"
+    )
+
+
+def test_the_attribution_hook_refuses_when_grep_fails(tmp_path: Path):
+    # `grep` exits 2 on an error, and a bare `grep` pipeline reads that as "no match".
+    # A stub that exits 2 stands first on PATH, so `command -v` finds it and the entry runs it.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    stub = stubs / "grep"
+    stub.write_bytes(b"#!/bin/sh\nexit 2\n")
+    stub.chmod(0o755)
+    message = tmp_path / "COMMIT_EDITMSG"
+    message.write_bytes(b"fix: x\n\nAn ordinary message.\n")
+    done = run_attribution_entry(message, path=os.pathsep.join([str(stubs), os.environ["PATH"]]))
+    out = done.stdout + done.stderr
+    assert done.returncode == 1 and "grep exited 2" in out, (
+        f"a hook whose `grep` exited 2 passed (exit {done.returncode}):\n{out}"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="needs a PATH holding only symlinks to bash, git and sed, which Windows cannot "
+    "make without privileges",
+)
+def test_the_attribution_hook_refuses_when_grep_is_not_found(tmp_path: Path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in ("bash", "git", "sed"):
+        found = shutil.which(name)
+        assert found, f"`{name}` is not on PATH"
+        (tools / name).symlink_to(found)
+    done = run_attribution_hook(tmp_path, "fix: x\n\nAn ordinary message.\n", path=str(tools))
+    out = done.stdout + done.stderr
+    assert done.returncode == 1 and "grep was not found" in out, (
+        f"a hook that cannot run `grep` passed (exit {done.returncode}):\n{out}"
     )
