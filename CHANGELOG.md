@@ -16,6 +16,9 @@ the field report or the gate's exit code sees.
 
 - The development lock takes ty 0.0.90, and the `setup-uv` pin moves from v10.3.0 to v10.3.1 in
   CI and in the workflow `radar init` writes.
+- The development lock takes pytest 9.2.0, ruff 0.17.3 and ty 0.0.96, the build backend moves to
+  hatchling 1.33.0, and the `setup-uv` pin moves to v10.3.3 in CI and in the workflow `radar init`
+  writes.
 
 ## [0.4.1] - 2026-11-01
 
