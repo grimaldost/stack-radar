@@ -519,15 +519,16 @@ def attribution_entry() -> list[str]:
 
 
 def run_attribution_entry(
-    message_path: Path, *, path: str | None = None
+    message_path: Path, *, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
     """Run the hook's entry on `message_path` the way pre-commit calls it.
 
     `shlex.split(entry) + [path]`, with `bash` resolved as pre-commit resolves it, and no
-    other part of pre-commit in between. `path` replaces `PATH` for the entry's own run.
+    other part of pre-commit in between. `env` is added to the inherited environment for
+    the entry's own run.
     """
     cmd = normalize_cmd((*attribution_entry(), str(message_path)))
-    env = None if path is None else {**os.environ, "PATH": path}
+    env = None if env is None else {**os.environ, **env}
     return subprocess.run(  # noqa: S603 - argv read from the tracked config, no shell
         cmd, capture_output=True, text=True, encoding="utf-8", timeout=120, env=env
     )
@@ -575,15 +576,13 @@ def test_the_attribution_hook_refuses_when_sed_fails_on_a_readable_path(tmp_path
 
 def test_the_attribution_hook_refuses_when_grep_fails(tmp_path: Path):
     # `grep` exits 2 on an error, and a bare `grep` pipeline reads that as "no match".
-    # A stub that exits 2 stands first on PATH, so `command -v` finds it and the entry runs it.
-    stubs = tmp_path / "stubs"
-    stubs.mkdir()
-    stub = stubs / "grep"
-    stub.write_bytes(b"#!/bin/sh\nexit 2\n")
-    stub.chmod(0o755)
+    # The failing `grep` is an exported bash function that returns 2, not a stub on PATH:
+    # Git for Windows' `bin/bash.exe` wrapper puts its own `/usr/bin` first on PATH, where the
+    # real `grep` would shadow a stub. `command -v grep` finds the function and the pipeline
+    # runs it.
     message = tmp_path / "COMMIT_EDITMSG"
     message.write_bytes(b"fix: x\n\nAn ordinary message.\n")
-    done = run_attribution_entry(message, path=os.pathsep.join([str(stubs), os.environ["PATH"]]))
+    done = run_attribution_entry(message, env={"BASH_FUNC_grep%%": "() { return 2; }"})
     out = done.stdout + done.stderr
     assert done.returncode == 1 and "grep exited 2" in out, (
         f"a hook whose `grep` exited 2 passed (exit {done.returncode}):\n{out}"
@@ -605,5 +604,5 @@ def test_the_attribution_hook_refuses_when_grep_is_not_found(tmp_path: Path):
     done = run_attribution_hook(tmp_path, "fix: x\n\nAn ordinary message.\n", path=str(tools))
     out = done.stdout + done.stderr
     assert done.returncode == 1 and "grep was not found" in out, (
-        f"a hook that cannot run `grep` passed (exit {done.returncode}):\n{out}"
+        f"a hook without `grep` did not report it missing (exit {done.returncode}):\n{out}"
     )
