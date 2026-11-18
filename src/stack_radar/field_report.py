@@ -20,6 +20,7 @@ written into the stack, and the stack is not made aware that the radar exists.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime as dt
 import json
 import os
@@ -27,6 +28,7 @@ import re
 import statistics
 import sys
 import time
+from collections.abc import Callable
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import NamedTuple
@@ -328,7 +330,7 @@ def prescan_hit(path: Path, needles: list[bytes], overlap: int) -> bool:
     json.loads per line, and the vast majority of transcripts never mention a given
     pilot tool at all. Needles are the globs' literal heads, so this is a superset of
     the real matches with one exception: a chain can resolve through `python` without
-    the word in the command line, so run_tool does not prescan for a matcher that
+    the word in the command line, so prepare_tool turns the prescan off for a matcher that
     matches `python`.
     """
     try:
@@ -381,22 +383,33 @@ class Scan(NamedTuple):
     opportunities: list[dict]
 
 
-def scan_file(
-    path: Path,
-    session_id: str,
-    slug: str,
-    subagent: bool,
-    use: Matchers,
-    text_needles: list[str],
-    seen_ids: set[str] | None = None,
-    opportunity: Matchers = EMPTY,
-    opportunity_seen_ids: set[str] | None = None,
-) -> Scan:
-    """One streaming pass, answering two questions at once.
+# A line that is not JSON. A distinct object, because `null` is valid JSON.
+MALFORMED = object()
+
+
+def parse_line(line: str) -> object:
+    """The JSON of one transcript line, or MALFORMED."""
+    try:
+        return json.loads(line)
+    except (ValueError, TypeError):
+        return MALFORMED
+
+
+class FileScan:
+    """One entry's reading of one transcript: which lines it selects, and what it makes of
+    each selected record.
+
+    The ONE place the per-entry line handling lives. `scan_file` reads a file for a single
+    entry and the shared pass of `--all` reads it once for several; both hand each line to
+    this class, so the two paths cannot drift apart. In the shared pass a line reaches an
+    entry only when this entry's own `selects` chose it: a record parsed for another entry
+    is never handled here, because it could resolve a call through the pending map that
+    this entry's own pass would have left unresolved.
 
     Results are matched back to calls by tool_use_id, which is why the pass keeps a
     pending map: a line that mentions no pilot tool is only parsed when it carries a
-    tool_use_id we are actually waiting on.
+    tool_use_id we are actually waiting on. Only the FIRST tool_use_id on such a line is
+    checked against the map.
 
     REPLAYED HISTORY. Resuming or forking a session writes a NEW transcript that
     replays the earlier one, so the same tool_use id exists in two files. Counting both
@@ -414,86 +427,149 @@ def scan_file(
     each with its tool_result would double the pending map for a number that answers a
     different question. They record only where and when the chance existed.
     """
-    invocations: list[dict] = []
-    replayed: list[dict] = []
-    opportunities: list[dict] = []
-    by_id: dict[str, dict] = {}
-    seen = seen_ids if seen_ids is not None else set()
-    opportunity_seen = opportunity_seen_ids if opportunity_seen_ids is not None else set()
-    malformed = 0
+
+    __slots__ = (
+        "by_id",
+        "invocations",
+        "malformed",
+        "opportunities",
+        "opportunity",
+        "opportunity_seen",
+        "replayed",
+        "seen",
+        "session_id",
+        "slug",
+        "subagent",
+        "text_needles",
+        "use",
+    )
+
+    def __init__(
+        self,
+        session_id: str,
+        slug: str,
+        subagent: bool,
+        use: Matchers,
+        text_needles: list[str],
+        seen_ids: set[str],
+        opportunity: Matchers,
+        opportunity_seen_ids: set[str],
+    ) -> None:
+        self.session_id, self.slug, self.subagent = session_id, slug, subagent
+        self.use, self.text_needles, self.opportunity = use, text_needles, opportunity
+        self.seen, self.opportunity_seen = seen_ids, opportunity_seen_ids
+        self.by_id: dict[str, dict] = {}
+        self.invocations: list[dict] = []
+        self.replayed: list[dict] = []
+        self.opportunities: list[dict] = []
+        self.malformed = 0
+
+    def selects(self, line: str) -> bool:
+        """Whether this entry reads `line`: one of its needles, or a result it waits on."""
+        if any(n in line for n in self.text_needles):
+            return True
+        if not self.by_id or '"tool_use_id"' not in line:
+            return False
+        m = TOOL_USE_ID_RE.search(line)
+        return m is not None and m.group(1) in self.by_id
+
+    def take(self, rec) -> None:
+        """Handle one line this entry selected, given as its parsed JSON or MALFORMED."""
+        if rec is MALFORMED:
+            self.malformed += 1
+            return
+        ts = parse_ts(rec.get("timestamp"))
+        for b in iter_blocks(rec):
+            btype = b.get("type")
+            if btype == "tool_use":
+                raw = b.get("name")
+                if not isinstance(raw, str):
+                    continue
+                tid = b.get("id")
+                name = matched_name(b, raw, self.use)
+                if name is not None:
+                    inv = {
+                        "tool": name,
+                        "at": ts.isoformat() if ts else None,
+                        "_ts": ts,
+                        "session": self.session_id,
+                        "slug": self.slug,
+                        "subagent": self.subagent,
+                        "latency_ms": None,
+                        "is_error": None,
+                        "resolved": False,
+                    }
+                    if isinstance(tid, str) and tid in self.seen:
+                        self.replayed.append(inv)
+                    else:
+                        if isinstance(tid, str):
+                            self.seen.add(tid)
+                            self.by_id[tid] = inv
+                        self.invocations.append(inv)
+                chance = matched_name(b, raw, self.opportunity)
+                if chance is not None and not (
+                    isinstance(tid, str) and tid in self.opportunity_seen
+                ):
+                    if isinstance(tid, str):
+                        self.opportunity_seen.add(tid)
+                    self.opportunities.append(
+                        {
+                            "tool": chance,
+                            "at": ts.isoformat() if ts else None,
+                            "_ts": ts,
+                            "session": self.session_id,
+                            "slug": self.slug,
+                            "subagent": self.subagent,
+                        }
+                    )
+            elif btype == "tool_result":
+                inv = self.by_id.pop(b.get("tool_use_id"), None)  # type: ignore[arg-type]
+                if inv is None:
+                    continue
+                inv["resolved"] = True
+                inv["is_error"] = bool(b.get("is_error"))
+                if ts and inv["_ts"]:
+                    delta = (ts - inv["_ts"]).total_seconds() * 1000.0
+                    if delta >= 0:
+                        inv["latency_ms"] = round(delta, 1)
+
+    def result(self) -> Scan:
+        return Scan(self.invocations, self.malformed, self.replayed, self.opportunities)
+
+
+def scan_file(
+    path: Path,
+    session_id: str,
+    slug: str,
+    subagent: bool,
+    use: Matchers,
+    text_needles: list[str],
+    seen_ids: set[str] | None = None,
+    opportunity: Matchers = EMPTY,
+    opportunity_seen_ids: set[str] | None = None,
+) -> Scan:
+    """One streaming pass over one file for one entry, answering two questions at once:
+    was the tool used, and did the chance to use it arise. The line handling is
+    FileScan's."""
+    fs = FileScan(
+        session_id,
+        slug,
+        subagent,
+        use,
+        text_needles,
+        seen_ids if seen_ids is not None else set(),
+        opportunity,
+        opportunity_seen_ids if opportunity_seen_ids is not None else set(),
+    )
     try:
         fh = path.open(encoding="utf-8", errors="replace")
     except OSError:
         return Scan([], 0, [], [])
     with fh:
         for line in fh:
-            interesting = any(n in line for n in text_needles)
-            if not interesting:
-                if not by_id or '"tool_use_id"' not in line:
-                    continue
-                m = TOOL_USE_ID_RE.search(line)
-                if not m or m.group(1) not in by_id:
-                    continue
-            try:
-                rec = json.loads(line)
-            except (ValueError, TypeError):
-                malformed += 1
-                continue
-            ts = parse_ts(rec.get("timestamp"))
-            for b in iter_blocks(rec):
-                btype = b.get("type")
-                if btype == "tool_use":
-                    raw = b.get("name")
-                    if not isinstance(raw, str):
-                        continue
-                    tid = b.get("id")
-                    name = matched_name(b, raw, use)
-                    if name is not None:
-                        inv = {
-                            "tool": name,
-                            "at": ts.isoformat() if ts else None,
-                            "_ts": ts,
-                            "session": session_id,
-                            "slug": slug,
-                            "subagent": subagent,
-                            "latency_ms": None,
-                            "is_error": None,
-                            "resolved": False,
-                        }
-                        if isinstance(tid, str) and tid in seen:
-                            replayed.append(inv)
-                        else:
-                            if isinstance(tid, str):
-                                seen.add(tid)
-                                by_id[tid] = inv
-                            invocations.append(inv)
-                    chance = matched_name(b, raw, opportunity)
-                    if chance is not None and not (
-                        isinstance(tid, str) and tid in opportunity_seen
-                    ):
-                        if isinstance(tid, str):
-                            opportunity_seen.add(tid)
-                        opportunities.append(
-                            {
-                                "tool": chance,
-                                "at": ts.isoformat() if ts else None,
-                                "_ts": ts,
-                                "session": session_id,
-                                "slug": slug,
-                                "subagent": subagent,
-                            }
-                        )
-                elif btype == "tool_result":
-                    inv = by_id.pop(b.get("tool_use_id"), None)  # type: ignore[arg-type]
-                    if inv is None:
-                        continue
-                    inv["resolved"] = True
-                    inv["is_error"] = bool(b.get("is_error"))
-                    if ts and inv["_ts"]:
-                        delta = (ts - inv["_ts"]).total_seconds() * 1000.0
-                        if delta >= 0:
-                            inv["latency_ms"] = round(delta, 1)
-    return Scan(invocations, malformed, replayed, opportunities)
+            if fs.selects(line):
+                fs.take(parse_line(line))
+    return fs.result()
 
 
 def discover(projects: Path) -> list[tuple[Path, str, str, bool]]:
@@ -1251,27 +1327,231 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def run_tool(
+@dataclasses.dataclass(eq=False)
+class Plan:
+    """One entry's report between its three steps: what `prepare_tool` decided, and
+    what the scan gathered for `finish_tool`.
+
+    THREE STEPS, because `--all` shares the middle one. Preparing an entry and finishing
+    its report are per entry; the scan reads the transcripts, and with one pass per entry
+    an `--all` command read every transcript once per catalogue entry. So the scan runs
+    once per window for every entry that reads that window (`scan_shared`), while
+    `run_tool`, the single-entry path, runs the three steps in a row.
+
+    Everything an entry gathers stays on its own plan - the id sets, the counters, the
+    rows - so no record is shared between entries.
+    """
+
+    tool: dict
+    name: str
+    report_subdir: str
+    tel: dict | None
+    findings: list[str]
+    use: Matchers
+    opportunity: Matchers
+    also_runs_in: list[str]
+    since: dt.date
+    until: dt.date
+    # The line filter: a line is parsed when it contains one of these. [""] reads every line.
+    needles: list[str]
+    # The raw-bytes prescan. Empty means no prescan: every transcript is streamed.
+    byte_needles: list[bytes]
+
+    index: Index | None = None
+    seen_ids: set[str] = dataclasses.field(default_factory=set)
+    opportunity_seen_ids: set[str] = dataclasses.field(default_factory=set)
+    invocations: list[dict] = dataclasses.field(default_factory=list)
+    replayed: list[dict] = dataclasses.field(default_factory=list)
+    chances: list[dict] = dataclasses.field(default_factory=list)
+    malformed: int = 0
+    n_prescan: int = 0
+    n_parsed: int = 0
+    # The wall clock of the pass that scanned this entry's window, census included. In an
+    # --all run that pass is shared, so every entry of one window carries the same figure.
+    scan_seconds: float = 0.0
+
+    @property
+    def key(self) -> tuple[dt.date, dt.date]:
+        return (self.since, self.until)
+
+    @property
+    def overlap(self) -> int:
+        """Bytes carried between prescan chunks, so a needle across a boundary is found."""
+        return max((len(n) for n in self.byte_needles), default=1) - 1
+
+    def file_scan(self, t: Transcript) -> FileScan:
+        """This entry's reader for one transcript, over the entry's own id sets."""
+        return FileScan(
+            t.session,
+            t.slug,
+            t.subagent,
+            self.use,
+            self.needles,
+            self.seen_ids,
+            self.opportunity,
+            self.opportunity_seen_ids,
+        )
+
+    def add(self, got: Scan) -> None:
+        self.n_prescan += 1
+        self.n_parsed += 1
+        self.malformed += got.malformed
+        self.invocations.extend(got.invocations)
+        self.replayed.extend(got.replayed)
+        self.chances.extend(got.opportunities)
+
+    def census(self, index: Index) -> None:
+        """Called after the window's pass: an entry with no prescan counts every file."""
+        self.index = index
+        if not self.byte_needles:
+            self.n_prescan = len(index.transcripts)
+
+
+def window_index(files: list, key: tuple[dt.date, dt.date], index_cache: dict) -> Index:
+    """The census of one window, computed once per command.
+
+    The census depends only on the window, never on the entry. It is the expensive half
+    of a scan: two bounded reads per main transcript, times every transcript on disk,
+    times every entry would be silly.
+    """
+    if key not in index_cache:
+        index_cache[key] = Index(files, *key)
+    return index_cache[key]
+
+
+def scan_plan(plan: Plan, files: list, index_cache: dict) -> None:
+    """The scan of one entry: its own prescan and its own stream of each file it hits."""
+    t0 = time.monotonic()
+    index = window_index(files, plan.key, index_cache)
+    # index.transcripts is ordered oldest-first, so a tool_use that appears in two files
+    # is credited to the file that saw it first.
+    for t in index.transcripts:
+        if plan.byte_needles and not prescan_hit(t.path, plan.byte_needles, plan.overlap):
+            continue
+        plan.add(
+            scan_file(
+                t.path,
+                t.session,
+                t.slug,
+                t.subagent,
+                plan.use,
+                plan.needles,
+                plan.seen_ids,
+                plan.opportunity,
+                plan.opportunity_seen_ids,
+            )
+        )
+    plan.census(index)
+    plan.scan_seconds = time.monotonic() - t0
+
+
+def prescan_hits(path: Path, plans: list[Plan]) -> set[int]:
+    """The positions in `plans` whose byte needles appear in the file, from ONE read.
+
+    Each plan's answer is the one `prescan_hit` gives it alone. The overlap carried
+    between chunks is the largest any plan needs, which finds every needle that crosses
+    a chunk boundary and nothing that is not in the file. A plan stops being tested once
+    it hits, and the read stops once every plan has. An OSError ends the read: a plan
+    that hit before it keeps the hit, and the others miss, which is where its own
+    prescan would have stopped too.
+    """
+    pending = {i: p.byte_needles for i, p in enumerate(plans)}
+    overlap = max(p.overlap for p in plans)
+    hit: set[int] = set()
+    try:
+        with path.open("rb") as fh:
+            tail = b""
+            while pending:
+                buf = fh.read(CHUNK)
+                if not buf:
+                    break
+                blob = tail + buf
+                for i, needles in list(pending.items()):
+                    if any(n in blob for n in needles):
+                        hit.add(i)
+                        del pending[i]
+                tail = blob[-overlap:] if overlap else b""
+    except OSError:
+        pass
+    return hit
+
+
+def scan_lines(t: Transcript, plans: list[Plan]) -> None:
+    """One stream of one file's lines, for every plan that hit it.
+
+    Each line goes through each plan's own filter, and a plan handles only the lines it
+    selected. The line is parsed at most once, and the parsed record goes only to the
+    plans that selected it; a malformed line counts once for each of them. A file that
+    cannot be opened yields nothing to any plan, as `scan_file` does.
+    """
+    readers = [p.file_scan(t) for p in plans]
+    try:
+        fh = t.path.open(encoding="utf-8", errors="replace")
+    except OSError:
+        fh = None
+    if fh is not None:
+        with fh:
+            for line in fh:
+                rec: object = None
+                parsed = False
+                for r in readers:
+                    if not r.selects(line):
+                        continue
+                    if not parsed:
+                        rec, parsed = parse_line(line), True
+                    r.take(rec)
+    for p, r in zip(plans, readers, strict=True):
+        p.add(r.result() if fh is not None else Scan([], 0, [], []))
+
+
+def scan_shared(plans: list[Plan], files: list, index_cache: dict) -> None:
+    """The scan of many entries: one pass per window, shared by the entries that read it.
+
+    Entries are grouped by window - without --since, each entry reads its own
+    `[telemetry].since` - and the groups are scanned in order of first appearance, with
+    nothing carried from one group to the next. Within a window, per transcript in the
+    census's oldest-first order: one read answers every entry's prescan, and when any
+    entry hits, one stream of the lines serves them all (`scan_lines`). An entry with no
+    byte needles hits every transcript, as on its own.
+    """
+    groups: dict[tuple[dt.date, dt.date], list[Plan]] = {}
+    for p in plans:
+        groups.setdefault(p.key, []).append(p)
+    for key, group in groups.items():
+        t0 = time.monotonic()
+        index = window_index(files, key, index_cache)
+        filtered = [p for p in group if p.byte_needles]
+        for t in index.transcripts:
+            hit = prescan_hits(t.path, filtered) if filtered else set()
+            chosen = {filtered[i] for i in hit}
+            hitting = [p for p in group if not p.byte_needles or p in chosen]
+            if hitting:
+                scan_lines(t, hitting)
+        seconds = time.monotonic() - t0
+        for p in group:
+            p.census(index)
+            p.scan_seconds = seconds
+
+
+def prepare_tool(
     tool: dict,
     args: argparse.Namespace,
-    env: dict | None,
-    home: Path,
-    files: list,
-    index_cache: dict,
-) -> dict | None:
-    """One entry's field report, written to field/<tool>/ and returned.
+    emit: Callable[[str], object] = print,
+) -> Plan | None:
+    """Everything one entry decides before the scan: its name checks, its window, its
+    matchers and its needles.
 
     None means the entry could not be measured at all (a name that is not an
-    identifier, no matcher, no window) - a condition the caller reports as a FAIL.
-    Everything softer is a finding inside the document, so a --all run keeps going and
-    reports at the end.
+    identifier, no matcher, no window) - a condition the caller reports as a FAIL, after
+    the line `emit` was given says why. `--all` collects those lines and prints each
+    in its entry's turn, so the console reads as it did with one pass per entry.
     """
     name = str(tool.get("name"))
     # The report directory is named after the entry, so a name with a path separator or
     # a leading dot would choose where the report is written. Checked here because the
     # field report does not run validate(); the rule is validate()'s own.
     if not is_plain_name(name):
-        print(f"[FAIL] {name!r}: not a valid entry name ({NAME_RULE}) - no report written")
+        emit(f"[FAIL] {name!r}: not a valid entry name ({NAME_RULE}) - no report written")
         return None
     # The report lands in field/<subdir>/, and field/ is TRACKED. A machine-local entry's
     # NAME must not travel, so its report directory is named for its `redact_as`
@@ -1286,7 +1566,7 @@ def run_tool(
     if tool.get("_local"):
         redact_as = str(tool.get("redact_as") or "").strip()
         if not redact_as:
-            print(
+            emit(
                 f"[FAIL] {name!r}: a machine-local entry (tools.local/) with no `redact_as` "
                 "- its name would be written into the tracked field/ path. Declare "
                 "`redact_as` so the report directory can carry the placeholder instead"
@@ -1294,7 +1574,7 @@ def run_tool(
             return None
         why = placeholder_error(tool, redact_as)
         if why:
-            print(
+            emit(
                 f"[FAIL] {name!r}: `redact_as` {redact_as!r} is not a valid placeholder "
                 f"({why}) - no report written"
             )
@@ -1335,7 +1615,7 @@ def run_tool(
         expand_command_globs(list((tel or {}).get("opportunity_match_command") or [])),
     )
     if not match and not skill_globs and not command_globs:
-        print(
+        emit(
             f"[FAIL] {name}: no [telemetry].match - add a [telemetry] block with "
             '`match` (tool-name globs, e.g. "mcp__plugin_x_y__*") and `since` '
             "(YYYY-MM-DD), or pass --match to probe"
@@ -1344,16 +1624,16 @@ def run_tool(
 
     since_raw = args.since or (tel or {}).get("since")
     if not since_raw:
-        print(f"[FAIL] {name}: no --since and no [telemetry].since")
+        emit(f"[FAIL] {name}: no --since and no [telemetry].since")
         return None
     try:
         since = dt.date.fromisoformat(str(since_raw))
         until = dt.date.fromisoformat(args.until) if args.until else dt.datetime.now(dt.UTC).date()
     except ValueError as e:
-        print(f"[FAIL] {name}: bad date - {e}")
+        emit(f"[FAIL] {name}: bad date - {e}")
         return None
     if until < since:
-        print(f"[FAIL] {name}: --until {until} precedes since {since}")
+        emit(f"[FAIL] {name}: --until {until} precedes since {since}")
         return None
 
     globs = list(match)
@@ -1393,22 +1673,47 @@ def run_tool(
         needles = [""]
     else:
         byte_needles = [n.encode() for n in needles]
-    overlap = max((len(n) for n in byte_needles), default=1) - 1
+    return Plan(
+        tool=tool,
+        name=name,
+        report_subdir=report_subdir,
+        tel=tel,
+        findings=findings,
+        use=use,
+        opportunity=opportunity,
+        also_runs_in=also_runs_in,
+        since=since,
+        until=until,
+        needles=needles,
+        byte_needles=byte_needles,
+    )
 
-    t0 = time.monotonic()
-    # The census depends only on the window, never on the entry, so a --all run over one
-    # window computes it once. It is the expensive half: two bounded reads per main
-    # transcript, times every transcript on disk, times every tool would be silly.
-    key = (since, until)
-    if key not in index_cache:
-        index_cache[key] = Index(files, since, until)
-    index = index_cache[key]
-    invocations: list[dict] = []
-    replayed: list[dict] = []
-    chances: list[dict] = []
-    malformed = 0
+
+def finish_tool(
+    plan: Plan,
+    args: argparse.Namespace,
+    env: dict | None,
+    home: Path,
+    files: list,
+) -> dict:
+    """One entry's field report from its scanned plan, written to field/<tool>/ and
+    returned.
+
+    Everything softer than an entry that cannot be measured is a finding inside the
+    document, so a --all run keeps going and reports at the end.
+    """
+    t_finish = time.monotonic()
+    index = plan.index
+    if index is None:
+        raise ValueError(f"{plan.name}: finished before it was scanned")
+    tool, name, tel, findings = plan.tool, plan.name, plan.tel, plan.findings
+    since, until = plan.since, plan.until
+    globs, skill_globs, command_globs = plan.use.tool, plan.use.skill, plan.use.command
+    opportunity, also_runs_in = plan.opportunity, plan.also_runs_in
+    report_subdir = plan.report_subdir
+    invocations, replayed, chances = plan.invocations, plan.replayed, plan.chances
+    malformed, n_prescan, n_parsed = plan.malformed, plan.n_prescan, plan.n_parsed
     n_in_window = len(index.transcripts)
-    n_prescan = n_parsed = 0
     # THE CENSUS, and it is the index's alone. Growing it with every session an entry's
     # own invocations touched would make the denominator ENTRY-DEPENDENT: in a --all table
     # each row would divide by a slightly different number, so the column that looks like
@@ -1417,34 +1722,6 @@ def run_tool(
     # own transcript is absent or falls outside the window - real use, but not a session
     # of its own, and never a reason to move one row's denominator. Reported separately.
     sessions_in_window: set[str] = set(index.sessions)
-    # One id set for the whole scan; index.transcripts is ordered oldest-first, so a
-    # tool_use that appears in two files is credited to the file that saw it first.
-    seen_ids: set[str] = set()
-    opportunity_seen_ids: set[str] = set()
-
-    for t in index.transcripts:
-        if byte_needles and not prescan_hit(t.path, byte_needles, overlap):
-            continue
-        n_prescan += 1
-        n_parsed += 1
-        got = scan_file(
-            t.path,
-            t.session,
-            t.slug,
-            t.subagent,
-            use,
-            needles,
-            seen_ids,
-            opportunity,
-            opportunity_seen_ids,
-        )
-        malformed += got.malformed
-        invocations.extend(got.invocations)
-        replayed.extend(got.replayed)
-        chances.extend(got.opportunities)
-
-    if not byte_needles:
-        n_prescan = n_in_window
 
     def dated_in_window(rows: list[dict]) -> list[dict]:
         return [r for r in rows if r["_ts"] is not None and since <= r["_ts"].date() <= until]
@@ -1456,7 +1733,10 @@ def run_tool(
         i.pop("_ts", None)
     for i in chances_in_window:
         i.pop("_ts", None)
-    wall = round(time.monotonic() - t0, 1)
+    # The scan's wall clock plus this entry's own work up to here. After a shared pass
+    # the scan's share is the whole window's pass, so the reports of one --all command
+    # carry about the same figure.
+    wall = round(plan.scan_seconds + time.monotonic() - t_finish, 1)
 
     used_sessions = {i["session"] for i in in_window}
     used_outside_census = used_sessions - sessions_in_window
@@ -1972,6 +2252,26 @@ def run_tool(
     return doc
 
 
+def run_tool(
+    tool: dict,
+    args: argparse.Namespace,
+    env: dict | None,
+    home: Path,
+    files: list,
+    index_cache: dict,
+) -> dict | None:
+    """One entry's field report, written to field/<tool>/ and returned: the three steps
+    in a row, with the scan this entry's own.
+
+    None means the entry could not be measured at all (see prepare_tool).
+    """
+    plan = prepare_tool(tool, args)
+    if plan is None:
+        return None
+    scan_plan(plan, files, index_cache)
+    return finish_tool(plan, args, env, home, files)
+
+
 def print_report(doc: dict) -> None:
     """The single-tool console read-out."""
     m, w = doc["metrics"], doc["window"]
@@ -2071,14 +2371,25 @@ def main() -> None:
     if not selected:
         print("[FAIL] --all selected no entry - does any tools/*.toml declare a matcher?")
         sys.exit(1)
+    # Every entry is prepared, the transcripts are read once per window for all of them,
+    # and then each report is finished in the entry order - the lines an entry's
+    # preparation printed are held until its turn, so the console reads as it did when
+    # each entry ran alone.
+    prepared: list[tuple[dict, Plan | None, list[str]]] = []
+    for tool in selected:
+        said: list[str] = []
+        prepared.append((tool, prepare_tool(tool, args, said.append), said))
+    scan_shared([p for _, p, _ in prepared if p is not None], files, index_cache)
     rows: list[list[str]] = []
     fails = 0
-    for tool in selected:
-        doc = run_tool(tool, args, env, home, files, index_cache)
-        if doc is None:
+    for tool, plan, said in prepared:
+        for line in said:
+            print(line)
+        if plan is None:
             fails += 1
             rows.append([str(tool.get("name")), str(tool.get("ring")), "-", "-", "-", "FAIL"])
             continue
+        doc = finish_tool(plan, args, env, home, files)
         m = doc["metrics"]
         for f in doc["findings"]:
             print(f)

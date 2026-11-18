@@ -14,6 +14,18 @@ the field report or the gate's exit code sees.
 
 ### Changed
 
+- **`radar field --all` reads each transcript once per window instead of once per entry.** The
+  selected entries are grouped by the window they read (each entry's own `[telemetry].since`
+  when `--since` is not given), and each window gets one pass: one read of a transcript's bytes
+  answers every entry's prescan, and one stream of its lines gives each entry only the lines its
+  own filter selects, each line parsed at most once. Each report is the one the entry gets when
+  run alone, except the fields that carry time. `scan.wall_clock_s` keeps its name and type, but
+  in an `--all` run it is now the wall clock of the shared pass over the entry's window plus the
+  entry's own finishing work, so the reports of one `--all` command carry about the same figure;
+  a single-entry run reports its own pass, as before. The reports are now written after every
+  window's pass has finished, so an `--all` run stopped or failed during the scan leaves no
+  report of that run, where it used to leave those of the entries already done.
+  (consumer-affecting)
 - The development lock takes ty 0.0.90, and the `setup-uv` pin moves from v10.3.0 to v10.3.1 in
   CI and in the workflow `radar init` writes.
 - The development lock takes pytest 9.2.0, ruff 0.17.3 and ty 0.0.96, the build backend moves to
