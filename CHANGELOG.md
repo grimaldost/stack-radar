@@ -12,6 +12,16 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+### Changed
+
+- `SECURITY.md` names 0.5.x as the supported line. It had stayed at 0.3.x through the 0.4.0,
+  0.4.1 and 0.5.0 releases.
+- The 0.5.0 entry left out the operational cost of a minor release: `radar init` writes
+  `requires_framework` as `>=X.Y.Z,<X.(Y+1).0`, so a catalogue created by 0.4.x carries the
+  ceiling `<0.5.0`, and engine 0.5.0 refuses it, printing a `[FAIL]` that names the range and
+  exiting 2, until its marker has that ceiling raised, for example to `<0.6.0`. Measured on
+  2026-11-18 against a catalogue whose marker says `>=0.2.1,<0.5.0`.
+
 ## [0.5.0] - 2026-11-18
 
 Released as a minor rather than a patch version, because what a reader of the field report sees
