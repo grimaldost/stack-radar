@@ -140,8 +140,9 @@ GPT, Codex, Copilot, Gemini, Cursor, Windsurf, or Devin's bot) or its bot addres
 scissors line and skips comment lines, so a person called Claude, an indented quote and the
 diff of `git commit -v` all pass. It fails closed: if `sed` or `grep` is not found, the
 message file cannot be read, or either tool fails, the commit is refused with the cause
-printed, and the match runs under `LC_ALL=C` so the caller's locale does not change it. No CI job checks a message for this rule, and the hook
-does not catch every form, so review holds the rest.
+printed, and the match runs under `LC_ALL=C` so the caller's locale does not change it. No CI
+job checks a message for this rule, and the hook does not catch every form, so review holds
+the rest.
 
 **Red proofs go in the body.** Every check that ships carries recorded proof that it can
 fail: the new test run against the pre-change code, with the failing assertion pasted under a
