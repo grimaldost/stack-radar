@@ -22,7 +22,10 @@ the field report or the gate's exit code sees.
   run alone, except the fields that carry time. `scan.wall_clock_s` keeps its name and type, but
   in an `--all` run it is now the wall clock of the shared pass over the entry's window plus the
   entry's own finishing work, so the reports of one `--all` command carry about the same figure;
-  a single-entry run reports its own pass, as before. (consumer-affecting)
+  a single-entry run reports its own pass, as before. The reports are now written after every
+  window's pass has finished, so an `--all` run stopped or failed during the scan leaves no
+  report of that run, where it used to leave those of the entries already done.
+  (consumer-affecting)
 - The development lock takes ty 0.0.90, and the `setup-uv` pin moves from v10.3.0 to v10.3.1 in
   CI and in the workflow `radar init` writes.
 - The development lock takes pytest 9.2.0, ruff 0.17.3 and ty 0.0.96, the build backend moves to
