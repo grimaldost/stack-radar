@@ -12,6 +12,14 @@ the field report or the gate's exit code sees.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-18
+
+Released as a minor rather than a patch version, because what a reader of the field report sees
+changes: in a `radar field --all` run `scan.wall_clock_s` is now the wall clock of the shared pass
+over the entry's window, and an `--all` run stopped or failed during the scan leaves no report of
+that run, where it used to leave the reports of the entries already done. The commit hook that now
+fails closed and the development lock updates alone would have made a patch.
+
 ### Changed
 
 - **`radar field --all` reads each transcript once per window instead of once per entry.** The
